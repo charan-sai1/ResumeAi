@@ -1,0 +1,5 @@
+{
+  "name": "AI Resume Architect",
+  "description": "An intelligent, dark-themed resume builder featuring AI-powered content optimization, automatic layout generation, and job description tailoring using the Gemini API.",
+  "requestFramePermissions": []
+}
