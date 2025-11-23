@@ -662,9 +662,13 @@ const App = () => {
                    <span className="text-slate-200 font-medium">Google</span>
                 </div>
                 {isProviderLinked('google.com') ? (
-                   <div className="flex items-center gap-2">
-                      <span className="text-xs text-green-400 flex items-center"><Check className="w-3 h-3 mr-1" /> Connected</span>
-                      <button onClick={() => handleUnlinkAccount('google.com')} className="p-1.5 text-slate-500 hover:text-red-400 rounded hover:bg-slate-700" title="Disconnect"><Unlink className="w-4 h-4" /></button>
+                   <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-900/20 text-green-400 text-xs font-medium border border-green-900/30">
+                        <Check className="w-3 h-3" /> Connected
+                      </span>
+                      <button onClick={() => handleUnlinkAccount('google.com')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-900/10 rounded transition-colors" title="Disconnect">
+                        <Unlink className="w-3 h-3" /> Unlink
+                      </button>
                    </div>
                 ) : (
                    <Button variant="secondary" onClick={() => handleLinkAccount('google')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
@@ -678,9 +682,13 @@ const App = () => {
                    <span className="text-slate-200 font-medium">GitHub</span>
                 </div>
                 {isProviderLinked('github.com') ? (
-                   <div className="flex items-center gap-2">
-                      <span className="text-xs text-green-400 flex items-center"><Check className="w-3 h-3 mr-1" /> Connected</span>
-                      <button onClick={() => handleUnlinkAccount('github.com')} className="p-1.5 text-slate-500 hover:text-red-400 rounded hover:bg-slate-700" title="Disconnect"><Unlink className="w-4 h-4" /></button>
+                   <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-900/20 text-green-400 text-xs font-medium border border-green-900/30">
+                        <Check className="w-3 h-3" /> Connected
+                      </span>
+                      <button onClick={() => handleUnlinkAccount('github.com')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-900/10 rounded transition-colors" title="Disconnect">
+                        <Unlink className="w-3 h-3" /> Unlink
+                      </button>
                    </div>
                 ) : (
                    <Button variant="secondary" onClick={() => handleLinkAccount('github')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
@@ -695,9 +703,13 @@ const App = () => {
                 </div>
                 {/* Note: Provider ID might be 'oidc.linkedin' or 'linkedin.com' depending on config */}
                 {(isProviderLinked('oidc.linkedin') || isProviderLinked('linkedin.com')) ? (
-                   <div className="flex items-center gap-2">
-                      <span className="text-xs text-green-400 flex items-center"><Check className="w-3 h-3 mr-1" /> Connected</span>
-                      <button onClick={() => handleUnlinkAccount('oidc.linkedin')} className="p-1.5 text-slate-500 hover:text-red-400 rounded hover:bg-slate-700" title="Disconnect"><Unlink className="w-4 h-4" /></button>
+                   <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-900/20 text-green-400 text-xs font-medium border border-green-900/30">
+                        <Check className="w-3 h-3" /> Connected
+                      </span>
+                      <button onClick={() => handleUnlinkAccount('oidc.linkedin')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-900/10 rounded transition-colors" title="Disconnect">
+                        <Unlink className="w-3 h-3" /> Unlink
+                      </button>
                    </div>
                 ) : (
                    <Button variant="secondary" onClick={() => handleLinkAccount('linkedin')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
@@ -710,6 +722,7 @@ const App = () => {
             </div>
           </div>
         </Modal>
+
       </>
     );
   }

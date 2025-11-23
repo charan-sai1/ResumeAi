@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Resume, ATSAnalysis, UserProfileMemory, QnAItem, LeadershipActivity, GroundingChunk } from "../types";
 
@@ -216,6 +215,25 @@ export const generateContentFromMemory = async (
   if (!apiKey) return "";
 
   try {
+    let specificGuidelines = "";
+    
+    if (sectionType === 'project') {
+      specificGuidelines = `
+      - **Project Structure**: Generate 3-4 concise bullet points.
+      - **Content**: 
+        1. First bullet: What was built and the core tech stack (e.g. **React**, **Python**).
+        2. Second bullet: Key technical challenge solved or feature implemented.
+        3. Third bullet: Quantifiable outcome or impact (e.g. **Reduced latency by 30%**).
+      - **Style**: Use strong action verbs (Architected, Deployed, Engineered).
+      `;
+    } else if (sectionType === 'experience') {
+      specificGuidelines = `
+      - **Experience Structure**: Generate 3-5 bullet points using the STAR method.
+      - **Content**: Focus on achievements over responsibilities.
+      - **Quantify**: Ensure at least 2 bullets have metrics.
+      `;
+    }
+
     const prompt = `
       You are an expert Resume Writer and Career Strategist.
       
@@ -228,11 +246,14 @@ export const generateContentFromMemory = async (
       - **Source of Truth**: Use the Career Memory as the primary data source. If the exact project/role exists in memory, use those details.
       - **Format**: 
         - If 'summary', return a 2-3 sentence professional bio OR a list of 3-4 key highlight bullets.
-        - If 'experience', 'project', or 'leadershipActivity', return 3-5 punchy bullet points.
+        - If 'experience', 'project', or 'leadershipActivity', return bullet points.
         - **CRITICAL**: Start EVERY bullet point with an asterisk (*) followed by a space.
       - **Quantify**: MANDATORY. Include metrics (%, $, numbers) in every bullet point to prove impact.
       - **Bold Impact**: Use **markdown bold** to highlight numbers and key tech stacks (e.g. **React**, **$50k revenue**).
       - **Style**: Professional, direct, action-oriented. No "I" statements.
+      
+      ${specificGuidelines}
+      
       - **Output**: Return ONLY the text content (no JSON, no markdown headers).
     `;
     
