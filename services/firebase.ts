@@ -1,10 +1,19 @@
 // Fix: Separate type imports from value imports for Firebase v9 modular SDK.
-// Fix: Import Firebase app functions and types via namespace import to resolve "no exported member" errors.
-import * as firebaseApp from 'firebase/app';
-// Fix: Import Firebase auth functions and types via namespace import to resolve "no exported member" errors.
-import * as firebaseAuth from 'firebase/auth';
-// Fix: Import Firebase firestore functions and types via namespace import to resolve "no exported member" errors.
-import * as firebaseFirestore from 'firebase/firestore';
+import { initializeApp, getApp, getApps } from 'firebase/app';
+import type { FirebaseApp } from 'firebase/app';
+// Fix: Import `signOut` as `fbSignOut` to match existing usage in this file.
+import { 
+  getAuth, GoogleAuthProvider, GithubAuthProvider, OAuthProvider, 
+  onAuthStateChanged, signInWithPopup, signOut as fbSignOut
+} from 'firebase/auth';
+import type { User as FBUser, Auth, AuthCredential } from 'firebase/auth';
+import { 
+  getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc
+} from 'firebase/firestore';
+import type { 
+  Firestore, CollectionReference, DocumentReference, DocumentData, 
+  QuerySnapshot, DocumentSnapshot 
+} from 'firebase/firestore';
 import { Resume, UserProfileMemory, UserSettings } from '../types';
 
 const firebaseConfig = {
@@ -19,46 +28,35 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-// Fix: Use firebaseApp.FirebaseApp from the namespace import
-let app: firebaseApp.FirebaseApp;
-// Fix: Use firebaseAuth.Auth from the namespace import
-let authInstance: firebaseAuth.Auth;
-// Fix: Use firebaseFirestore.Firestore from the namespace import
-let dbInstance: firebaseFirestore.Firestore;
+let app: FirebaseApp;
+let authInstance: Auth;
+let dbInstance: Firestore;
 let isConfigured = false;
 
 try {
   // Check if app is already initialized to prevent errors during hot reload
-  // Fix: Use firebaseApp.getApps() from namespace import
-  if (!firebaseApp.getApps().length) {
-    // Fix: Use firebaseApp.initializeApp() from namespace import
-    app = firebaseApp.initializeApp(firebaseConfig);
+  if (!getApps().length) {
+    app = initializeApp(firebaseConfig);
   } else {
-    // Fix: Use firebaseApp.getApp() from namespace import
-    app = firebaseApp.getApp();
+    app = getApp();
   }
-  // Fix: Use firebaseAuth.getAuth() from namespace import
-  authInstance = firebaseAuth.getAuth(app);
-  // Fix: Use firebaseFirestore.getFirestore() from namespace import
-  dbInstance = firebaseFirestore.getFirestore(app);
+  authInstance = getAuth(app);
+  dbInstance = getFirestore(app);
   isConfigured = true;
 } catch (e) {
   console.error("Firebase Initialization Error:", e);
 }
 
 export { authInstance as auth, dbInstance as db, isConfigured };
-// Fix: Export User type from firebaseAuth namespace
-export type User = firebaseAuth.User;
+export type User = FBUser;
 
 // --- Auth Functions ---
 
 export const signInWithGoogle = async () => {
   if (!authInstance) throw new Error("Firebase not configured");
-  // Fix: Use firebaseAuth.GoogleAuthProvider from namespace import
-  const provider = new firebaseAuth.GoogleAuthProvider();
+  const provider = new GoogleAuthProvider();
   try {
-    // Fix: Use firebaseAuth.signInWithPopup() from namespace import
-    const result = await firebaseAuth.signInWithPopup(authInstance, provider);
+    const result = await signInWithPopup(authInstance, provider);
     return result.user;
   } catch (error) {
     console.error("Auth Error:", error);
@@ -68,11 +66,9 @@ export const signInWithGoogle = async () => {
 
 export const signInWithGithub = async () => {
   if (!authInstance) throw new Error("Firebase not configured");
-  // Fix: Use firebaseAuth.GithubAuthProvider from namespace import
-  const provider = new firebaseAuth.GithubAuthProvider();
+  const provider = new GithubAuthProvider();
   try {
-    // Fix: Use firebaseAuth.signInWithPopup() from namespace import
-    const result = await firebaseAuth.signInWithPopup(authInstance, provider);
+    const result = await signInWithPopup(authInstance, provider);
     return result.user;
   } catch (error) {
     console.error("GitHub Auth Error:", error);
@@ -82,15 +78,13 @@ export const signInWithGithub = async () => {
 
 export const signInWithLinkedIn = async () => {
   if (!authInstance) throw new Error("Firebase not configured");
-  // Fix: Use firebaseAuth.OAuthProvider from namespace import
-  const provider = new firebaseAuth.OAuthProvider('oidc.linkedin');
+  const provider = new OAuthProvider('oidc.linkedin');
   provider.addScope('openid');
   provider.addScope('profile');
   provider.addScope('email');
   
   try {
-    // Fix: Use firebaseAuth.signInWithPopup() from namespace import
-    const result = await firebaseAuth.signInWithPopup(authInstance, provider);
+    const result = await signInWithPopup(authInstance, provider);
     return result.user;
   } catch (error) {
     console.error("LinkedIn Auth Error:", error);
@@ -102,12 +96,10 @@ export const signInWithLinkedIn = async () => {
 
 const getProviderObj = (providerName: 'google' | 'github' | 'linkedin') => {
   switch (providerName) {
-    // Fix: Use firebaseAuth.GoogleAuthProvider and firebaseAuth.GithubAuthProvider from namespace import
-    case 'google': return new firebaseAuth.GoogleAuthProvider();
-    case 'github': return new firebaseAuth.GithubAuthProvider();
+    case 'google': return new GoogleAuthProvider();
+    case 'github': return new GithubAuthProvider();
     case 'linkedin': 
-      // Fix: Use firebaseAuth.OAuthProvider from namespace import
-      const p = new firebaseAuth.OAuthProvider('oidc.linkedin');
+      const p = new OAuthProvider('oidc.linkedin');
       p.addScope('openid');
       p.addScope('profile');
       p.addScope('email');
@@ -121,8 +113,7 @@ export const linkProvider = async (user: User, providerName: 'google' | 'github'
   const provider = getProviderObj(providerName);
   try {
     // Modular SDK's linkWithPopup requires a provider object directly
-    // Fix: Use firebaseAuth.signInWithPopup() from namespace import
-    const result = await firebaseAuth.signInWithPopup(authInstance, provider);
+    const result = await signInWithPopup(authInstance, provider);
     if (result.user.uid !== user.uid) {
       // This is a complex scenario where the linked account might belong to another user.
       // Firebase modular SDK handles this internally, but for simplicity, we assume success.
@@ -151,8 +142,7 @@ export const unlinkProvider = async (user: User, providerId: string) => {
 export const signOut = async () => {
   if (!authInstance) return;
   try {
-    // Fix: Use firebaseAuth.signOut() from namespace import
-    await firebaseAuth.signOut(authInstance);
+    await fbSignOut(authInstance);
   } catch (error) {
     console.error("Sign Out Error:", error);
   }
@@ -163,8 +153,7 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
     callback(null);
     return () => {};
   }
-  // Fix: Use firebaseAuth.onAuthStateChanged() from namespace import
-  return firebaseAuth.onAuthStateChanged(authInstance, callback);
+  return onAuthStateChanged(authInstance, callback);
 };
 
 // --- Database Functions ---
@@ -172,9 +161,8 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
 export const saveResumeToDB = async (userId: string, resume: Resume) => {
   if (!dbInstance) return;
   try {
-    // Fix: Use firebaseFirestore.doc() and firebaseFirestore.setDoc() from namespace import
-    const resumeDocRef = firebaseFirestore.doc(dbInstance, 'users', userId, 'resumes', resume.id);
-    await firebaseFirestore.setDoc(resumeDocRef, resume);
+    const resumeDocRef = doc(dbInstance, 'users', userId, 'resumes', resume.id);
+    await setDoc(resumeDocRef, resume);
   } catch (e) {
     console.error("Error saving resume:", e);
     throw e;
@@ -184,9 +172,8 @@ export const saveResumeToDB = async (userId: string, resume: Resume) => {
 export const deleteResumeFromDB = async (userId: string, resumeId: string) => {
   if (!dbInstance) return;
   try {
-    // Fix: Use firebaseFirestore.doc() and firebaseFirestore.deleteDoc() from namespace import
-    const resumeDocRef = firebaseFirestore.doc(dbInstance, 'users', userId, 'resumes', resumeId);
-    await firebaseFirestore.deleteDoc(resumeDocRef);
+    const resumeDocRef = doc(dbInstance, 'users', userId, 'resumes', resumeId);
+    await deleteDoc(resumeDocRef);
   } catch (e) {
     console.error("Error deleting resume:", e);
     throw e;
@@ -196,9 +183,8 @@ export const deleteResumeFromDB = async (userId: string, resumeId: string) => {
 export const fetchResumesFromDB = async (userId: string): Promise<Resume[]> => {
   if (!dbInstance) return [];
   try {
-    // Fix: Use firebaseFirestore.collection() and firebaseFirestore.getDocs() from namespace import
-    const resumesCollectionRef = firebaseFirestore.collection(dbInstance, 'users', userId, 'resumes');
-    const querySnapshot = await firebaseFirestore.getDocs(resumesCollectionRef);
+    const resumesCollectionRef = collection(dbInstance, 'users', userId, 'resumes');
+    const querySnapshot = await getDocs(resumesCollectionRef);
     const resumes: Resume[] = [];
     querySnapshot.forEach((docSnap) => {
       resumes.push(docSnap.data() as Resume);
@@ -213,9 +199,8 @@ export const fetchResumesFromDB = async (userId: string): Promise<Resume[]> => {
 export const saveMemoryToDB = async (userId: string, memory: UserProfileMemory) => {
   if (!dbInstance) return;
   try {
-    // Fix: Use firebaseFirestore.doc() and firebaseFirestore.setDoc() from namespace import
-    const memoryDocRef = firebaseFirestore.doc(dbInstance, 'users', userId, 'memory', 'main');
-    await firebaseFirestore.setDoc(memoryDocRef, memory);
+    const memoryDocRef = doc(dbInstance, 'users', userId, 'memory', 'main');
+    await setDoc(memoryDocRef, memory);
   } catch (e) {
     console.error("Error saving memory:", e);
     throw e;
@@ -225,9 +210,8 @@ export const saveMemoryToDB = async (userId: string, memory: UserProfileMemory) 
 export const fetchMemoryFromDB = async (userId: string): Promise<UserProfileMemory | null> => {
   if (!dbInstance) return null;
   try {
-    // Fix: Use firebaseFirestore.doc() and firebaseFirestore.getDoc() from namespace import
-    const memoryDocRef = firebaseFirestore.doc(dbInstance, 'users', userId, 'memory', 'main');
-    const docSnap = await firebaseFirestore.getDoc(memoryDocRef);
+    const memoryDocRef = doc(dbInstance, 'users', userId, 'memory', 'main');
+    const docSnap = await getDoc(memoryDocRef);
     
     if (docSnap.exists()) {
       return docSnap.data() as UserProfileMemory;
@@ -244,9 +228,8 @@ export const fetchMemoryFromDB = async (userId: string): Promise<UserProfileMemo
 export const saveUserSettingsToDB = async (userId: string, settings: UserSettings) => {
   if (!dbInstance) return;
   try {
-    // Fix: Use firebaseFirestore.doc() and firebaseFirestore.setDoc() from namespace import
-    const settingsDocRef = firebaseFirestore.doc(dbInstance, 'users', userId, 'settings', 'config');
-    await firebaseFirestore.setDoc(settingsDocRef, settings);
+    const settingsDocRef = doc(dbInstance, 'users', userId, 'settings', 'config');
+    await setDoc(settingsDocRef, settings);
   } catch (e) {
     console.error("Error saving settings:", e);
     throw e;
@@ -256,9 +239,8 @@ export const saveUserSettingsToDB = async (userId: string, settings: UserSetting
 export const fetchUserSettingsFromDB = async (userId: string): Promise<UserSettings | null> => {
   if (!dbInstance) return null;
   try {
-    // Fix: Use firebaseFirestore.doc() and firebaseFirestore.getDoc() from namespace import
-    const settingsDocRef = firebaseFirestore.doc(dbInstance, 'users', userId, 'settings', 'config');
-    const docSnap = await firebaseFirestore.getDoc(settingsDocRef);
+    const settingsDocRef = doc(dbInstance, 'users', userId, 'settings', 'config');
+    const docSnap = await getDoc(settingsDocRef);
     
     if (docSnap.exists()) {
       return docSnap.data() as UserSettings;

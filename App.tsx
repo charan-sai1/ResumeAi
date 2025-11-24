@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings } from './types';
 import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey } from './services/geminiService';
@@ -257,7 +256,6 @@ const App = () => {
       setIsProfileModalOpen(true);
       setNotification({ type: 'error', message: "Guest Mode: Please provide an API Key in Settings to use AI features." });
     }
-    setView('dashboard'); // Explicitly set view to dashboard for guest users
   };
 
   const handleSignOut = async () => {
@@ -562,12 +560,6 @@ const App = () => {
     </div>
   );
 
-  // Show a loading overlay if authentication or data is still loading
-  if (isAuthLoading || isDataLoading) {
-    return <LoadingOverlay message="Loading your workspace..." />;
-  }
-
-  // Show login page if no user is authenticated and loading is complete
   if (!user && !isAuthLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">

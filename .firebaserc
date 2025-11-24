@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "resume-2c7d7"
+  },
+  "targets": {
+    "resume-2c7d7": {
+      "hosting": {
+        "ai-resume-24": [
+          "ai-resume-24"
+        ]
+      }
+    }
+  }
+}
