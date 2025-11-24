@@ -1,5 +1,4 @@
 
-
 export interface Resume {
   id: string;
   title: string;
@@ -24,6 +23,11 @@ export interface Resume {
     sources: GroundingChunk[];
   };
   hiddenKeywords?: string[]; // For ATS keyword stuffing (invisible text)
+}
+
+export interface UserSettings {
+  geminiApiKey?: string;
+  themePref?: 'dark' | 'light';
 }
 
 export interface QnAItem {

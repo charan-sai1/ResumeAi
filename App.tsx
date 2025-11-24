@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk } from './types';
-import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS } from './services/geminiService';
+import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings } from './types';
+import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey } from './services/geminiService';
 import { extractTextFromFile } from './services/fileService';
-import { signInWithGoogle, signInWithLinkedIn, signInWithGithub, signOut, subscribeToAuth, saveResumeToDB, fetchResumesFromDB, saveMemoryToDB, fetchMemoryFromDB, deleteResumeFromDB, isConfigured, linkProvider, unlinkProvider } from './services/firebase';
+import { signInWithGoogle, signInWithLinkedIn, signInWithGithub, signOut, subscribeToAuth, saveResumeToDB, fetchResumesFromDB, saveMemoryToDB, fetchMemoryFromDB, deleteResumeFromDB, isConfigured, linkProvider, unlinkProvider, fetchUserSettingsFromDB, saveUserSettingsToDB } from './services/firebase';
 import ResumeEditor from './components/ResumeEditor';
 import ResumePreview from './components/ResumePreview';
 import Dashboard from './components/Dashboard';
 import { Button, Modal, TextArea, Toast, LoadingOverlay, DragOverlay, Card, Input } from './components/UIComponents';
-import { Download, Wand2, ArrowLeft, Gauge, AlertCircle, LogOut, LogIn, AlertTriangle, HelpCircle, ExternalLink, UserCircle, Copy, Settings, Linkedin, Zap, Eye, Edit, Search, Sparkles, Github, Check, Link as LinkIcon, Unlink } from 'lucide-react';
+import { Download, Wand2, ArrowLeft, Gauge, AlertCircle, LogOut, LogIn, AlertTriangle, HelpCircle, ExternalLink, UserCircle, Copy, Settings, Linkedin, Zap, Eye, Edit, Search, Sparkles, Github, Check, Link as LinkIcon, Unlink, Key, Save } from 'lucide-react';
 
 // --- Mock Data Initial State ---
 const initialResume: Resume = {
@@ -15,32 +15,12 @@ const initialResume: Resume = {
   title: 'Software Engineer',
   lastModified: Date.now(),
   atsScore: 0,
-  personalInfo: {
-    fullName: '',
-    email: '',
-    phone: '',
-    location: '',
-    linkedin: '',
-    website: '',
-    summary: ''
-  },
-  experience: [],
-  education: [],
-  skills: [],
-  projects: [],
-  leadershipActivities: [] // Initialize new field
+  personalInfo: { fullName: '', email: '', phone: '', location: '', linkedin: '', website: '', summary: '' },
+  experience: [], education: [], skills: [], projects: [], leadershipActivities: []
 };
 
 const initialMemory: UserProfileMemory = {
-  lastUpdated: Date.now(),
-  personalInfo: {},
-  experiences: [],
-  educations: [],
-  projects: [],
-  skills: [],
-  rawSourceFiles: [],
-  qna: [],
-  leadershipActivities: [] // Initialize new field in memory
+  lastUpdated: Date.now(), personalInfo: {}, experiences: [], educations: [], projects: [], skills: [], rawSourceFiles: [], qna: [], leadershipActivities: []
 };
 
 const App = () => {
@@ -59,6 +39,11 @@ const App = () => {
   const [userMemory, setUserMemory] = useState<UserProfileMemory>(initialMemory);
   const [isDataLoading, setIsDataLoading] = useState(false);
 
+  // --- Settings State ---
+  const [userSettings, setUserSettings] = useState<UserSettings>({});
+  const [customApiKeyInput, setCustomApiKeyInput] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
   // --- Modals & Analysis State ---
   const [isTailorModalOpen, setTailorModalOpen] = useState(false);
   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
@@ -74,7 +59,7 @@ const App = () => {
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, filename: '' });
   const [isDragging, setIsDragging] = useState(false);
-  const [notification, setNotification] = useState<{type: 'success'|'error', message: string, tips?: string} | null>(null);
+  const [notification, setNotification] = useState<{type: 'success'|'error', message: string, tips?: React.ReactNode} | null>(null);
 
   // --- Domain Detection ---
   useEffect(() => {
@@ -96,14 +81,32 @@ const App = () => {
       if (currentUser) {
         setIsDataLoading(true);
         try {
-          const [fetchedResumes, fetchedMemory] = await Promise.all([
+          const [fetchedResumes, fetchedMemory, fetchedSettings] = await Promise.all([
             fetchResumesFromDB(currentUser.uid),
-            fetchMemoryFromDB(currentUser.uid)
+            fetchMemoryFromDB(currentUser.uid),
+            fetchUserSettingsFromDB(currentUser.uid)
           ]);
           // Sanitize loaded resumes to prevent crashes
           const sanitizedResumes = fetchedResumes.map(sanitizeResume);
           setResumes(sanitizedResumes);
           if (fetchedMemory) setUserMemory(sanitizeMemory(fetchedMemory));
+
+          // Load Settings (API Key)
+          if (fetchedSettings) {
+            setUserSettings(fetchedSettings);
+            if (fetchedSettings.geminiApiKey) {
+              setCustomApiKeyInput(fetchedSettings.geminiApiKey);
+              setUserApiKey(fetchedSettings.geminiApiKey);
+            } else {
+              // If logged in but no API key, prompt user
+              setIsProfileModalOpen(true);
+              setNotification({ type: 'error', message: "Action Required: Please add your Gemini API Key in Settings to continue." });
+            }
+          } else {
+              // New user / no settings
+              setIsProfileModalOpen(true);
+              setNotification({ type: 'error', message: "Action Required: Please add your Gemini API Key in Settings to continue." });
+          }
 
           // Fix: Ensure Username is loaded if resume doesn't have one
           setCurrentResume(prev => {
@@ -114,6 +117,7 @@ const App = () => {
             }
             return existing;
           });
+          setView('dashboard'); // Explicitly set view to dashboard after login and data load
 
         } catch (error) {
           console.error("Data Load Error", error);
@@ -127,6 +131,9 @@ const App = () => {
           setResumes([]);
           setUserMemory(initialMemory);
           setCurrentResume(initialResume); // Clear current resume on sign-out
+          setUserSettings({});
+          setCustomApiKeyInput('');
+          setUserApiKey(null);
         }
       }
     });
@@ -207,23 +214,47 @@ const App = () => {
     }
   };
 
+  const handleSaveSettings = async () => {
+    if (!user) {
+      setNotification({ type: 'error', message: 'You must be logged in to save settings.' });
+      return;
+    }
+    setIsSavingSettings(true);
+    try {
+      const newSettings: UserSettings = { ...userSettings, geminiApiKey: customApiKeyInput };
+      await saveUserSettingsToDB(user.uid, newSettings);
+      setUserSettings(newSettings);
+      setUserApiKey(customApiKeyInput || null);
+      setNotification({ type: 'success', message: 'API Key saved successfully!' });
+    } catch (e) {
+      console.error("Failed to save settings:", e);
+      setNotification({ type: 'error', message: 'Failed to save API Key. Please try again.' });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   const handleAuthError = (e: any, providerName: string = 'Google') => {
     console.error("Login Exception:", e);
     let message = e.message || "Unknown error";
-    let tips = "";
+    let tips: React.ReactNode = "";
 
     if (e.code === 'auth/operation-not-allowed' || e.code === 'auth/configuration-not-found') {
       message = `${providerName} Sign-in not enabled.`;
-      tips = `Enable ${providerName} provider in Firebase Console -> Authentication.`;
+      tips = (
+        <>
+          Enable {providerName} provider in Firebase Console &gt; Authentication.
+        </>
+      );
     } else if (e.code === 'auth/unauthorized-domain') {
       message = `Domain not authorized.`;
-      tips = `Add '${currentDomain}' to Firebase Console -> Authentication -> Settings -> Authorized Domains.`;
-    } else if (e.code === 'auth/invalid-api-key') {
-      message = "Invalid API Key.";
-      tips = "Check services/firebase.ts configuration.";
-    } else if (e.code === 'auth/account-exists-with-different-credential') {
-      message = "Account exists with different credentials.";
-      tips = "Sign in with your existing method, then link this new account in settings.";
+      tips = (
+        <div>
+          Add the following domain to Firebase Console &gt; Authentication &gt; Settings &gt; Authorized Domains:
+          <br />
+          <code className="bg-slate-700 text-indigo-300 px-2 py-1 rounded text-sm select-all break-all">{currentDomain}</code>
+        </div>
+      );
     }
 
     setNotification({ type: 'error', message: message, tips: tips });
@@ -246,7 +277,12 @@ const App = () => {
     } catch(e) {
       console.error("Local storage error", e);
     }
-    setNotification({ type: 'success', message: 'Welcome to Guest Mode. Data is saved locally.' });
+    
+    // Prompt guest for key too if not present in memory/session
+    if (!hasApiKey()) {
+      setIsProfileModalOpen(true);
+      setNotification({ type: 'error', message: "Guest Mode: Please provide an API Key in Settings to use AI features." });
+    }
   };
 
   const handleSignOut = async () => {
@@ -254,9 +290,11 @@ const App = () => {
       setUser(null);
       setResumes([]);
       setUserMemory(initialMemory);
+      setUserApiKey(null);
       setView('dashboard');
     } else {
       await signOut();
+      setUserApiKey(null);
     }
   };
   
@@ -276,6 +314,12 @@ const App = () => {
       setNotification({ type: 'error', message: 'Please sign in to process files.' });
       return;
     }
+    if (!hasApiKey()) {
+      setNotification({ type: 'error', message: 'API Key required. Check Settings.' });
+      setIsProfileModalOpen(true);
+      return;
+    }
+    
     setIsProcessingFiles(true);
     setUploadProgress({ current: 0, total: files.length, filename: '' });
     
@@ -299,11 +343,7 @@ const App = () => {
       await handleUpdateMemory(updatedMemory); // Use the callback
       setNotification({ type: successCount > 0 ? 'success' : 'error', message: successCount > 0 ? `Processed ${successCount} files.` : 'Failed to process files.' });
     } catch (error: any) { // Catch potential custom error from mergeDataIntoMemory
-      let errorMessage = 'Processing failed.';
-      if (error instanceof Error && error.message.includes("AI returned malformed JSON")) {
-        errorMessage = error.message;
-      }
-      setNotification({ type: 'error', message: errorMessage });
+      setNotification({ type: 'error', message: error.message || 'Processing failed.' });
     } finally {
       setIsProcessingFiles(false);
       setUploadProgress({ current: 0, total: 0, filename: '' });
@@ -369,6 +409,11 @@ const App = () => {
   };
 
   const handleCreateFromMemory = async () => {
+    if (!hasApiKey()) {
+       setNotification({ type: 'error', message: 'API Key required for AI generation.' });
+       setIsProfileModalOpen(true);
+       return;
+    }
     if (isGeneratingFromMemory) return;
     setIsGeneratingFromMemory(true);
     try {
@@ -444,6 +489,11 @@ const App = () => {
   };
 
   const runATSAnalysis = async () => {
+    if (!hasApiKey()) {
+      setNotification({ type: 'error', message: 'API Key required for analysis.' });
+      setIsProfileModalOpen(true);
+      return;
+    }
     setIsAnalyzingATS(true);
     const result = await analyzeATS(currentResume);
     setAtsAnalysis(result);
@@ -452,23 +502,10 @@ const App = () => {
     setResumes(prev => prev.map(r => r.id === updated.id ? updated : r));
     if (user && !user.isGuest) saveResumeToDB(user.uid, updated);
     setIsAnalyzingATS(false);
-
-    if (result.score < 75) {
-      setNotification({
-        type: 'error',
-        message: `ATS Score: ${result.score}/100. Issues detected.`,
-        tips: "Use 'Auto-Fix with AI' (below) to instantly optimize your score."
-      });
-    } else {
-      setNotification({
-        type: 'success',
-        message: `Strong ATS Score: ${result.score}/100!`
-      });
-    }
   };
 
   const handleATSFix = async () => {
-    if (!atsAnalysis) return;
+    if (!atsAnalysis || !hasApiKey()) return;
     setIsFixingATS(true);
     try {
       const fixedResume = await rewriteResumeForATS(currentResume, atsAnalysis);
@@ -488,6 +525,11 @@ const App = () => {
 
   const handleTailor = async () => {
     if (!jobDescription) return;
+    if (!hasApiKey()) {
+       setNotification({ type: 'error', message: 'API Key required for tailoring.' });
+       setIsProfileModalOpen(true);
+       return;
+    }
     setIsTailoring(true);
     
     // tailorResumeToJob now includes built-in AI research
@@ -526,6 +568,25 @@ const App = () => {
     return user.providerData.some((p: any) => p.providerId === providerId);
   };
 
+  // Define common Header for Dashboard and Editor to include Profile button
+  const TopBar = () => (
+     <div className="flex items-center gap-4">
+      {user?.isGuest && (
+        <div className="hidden sm:flex px-3 py-1 bg-yellow-900/30 border border-yellow-900/50 rounded-full text-yellow-500 text-xs font-medium items-center gap-2">
+          <AlertTriangle className="w-3 h-3" /> Guest
+        </div>
+      )}
+      {!user?.isGuest && (
+        <Button variant="ghost" onClick={() => setIsProfileModalOpen(true)} className="text-slate-400 hover:text-white text-sm h-8 px-2 flex items-center">
+          <UserCircle className="w-5 h-5 sm:mr-2" /> <span className="hidden sm:inline">Profile</span>
+        </Button>
+      )}
+      <Button variant="ghost" onClick={handleSignOut} className="text-slate-500 hover:text-red-400 text-sm h-8 px-2">
+        <LogOut className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">{user?.isGuest ? 'Exit' : 'Sign Out'}</span>
+      </Button>
+    </div>
+  );
+
   if (!user && !isAuthLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
@@ -543,15 +604,14 @@ const App = () => {
              </div>
           ) : (
             <div className="space-y-3">
-              <Button variant="primary" onClick={handleLogin} className="w-full py-3 text-base hover:scale-[1.02] transition-transform bg-white hover:bg-gray-100 text-slate-900 font-medium">
-                 <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" /><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" /></svg>
+              <Button variant="primary" onClick={handleLogin} className="w-full py-3 text-base bg-white hover:bg-gray-100 text-slate-900 font-medium">
                  Sign In with Google
               </Button>
-              <Button variant="primary" onClick={handleGitHubLogin} className="w-full py-3 text-base hover:scale-[1.02] transition-transform bg-[#333] hover:bg-[#222] text-white font-medium">
+              <Button variant="primary" onClick={handleGitHubLogin} className="w-full py-3 text-base bg-[#333] hover:bg-[#222] text-white font-medium">
                  <Github className="w-5 h-5 mr-2" fill="currentColor" />
                  Sign In with GitHub
               </Button>
-              <Button variant="primary" onClick={handleLinkedInLogin} className="w-full py-3 text-base hover:scale-[1.02] transition-transform bg-[#0077b5] hover:bg-[#005e93] font-medium">
+              <Button variant="primary" onClick={handleLinkedInLogin} className="w-full py-3 text-base bg-[#0077b5] hover:bg-[#005e93] font-medium">
                  <Linkedin className="w-5 h-5 mr-2" fill="currentColor" />
                  Sign In with LinkedIn
               </Button>
@@ -575,164 +635,10 @@ const App = () => {
     );
   }
 
-  // Define common Header for Dashboard and Editor to include Profile button
-  const TopBar = () => (
-     <div className="flex items-center gap-4">
-      {user?.isGuest && (
-        <div className="hidden sm:flex px-3 py-1 bg-yellow-900/30 border border-yellow-900/50 rounded-full text-yellow-500 text-xs font-medium items-center gap-2">
-          <AlertTriangle className="w-3 h-3" /> Guest
-        </div>
-      )}
-      {!user?.isGuest && (
-        <Button variant="ghost" onClick={() => setIsProfileModalOpen(true)} className="text-slate-400 hover:text-white text-sm h-8 px-2 flex items-center">
-          <UserCircle className="w-5 h-5 sm:mr-2" /> <span className="hidden sm:inline">Profile</span>
-        </Button>
-      )}
-      <Button variant="ghost" onClick={handleSignOut} className="text-slate-500 hover:text-red-400 text-sm h-8 px-2">
-        <LogOut className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">{user?.isGuest ? 'Exit' : 'Sign Out'}</span>
-      </Button>
-    </div>
-  );
-
-  if (view === 'dashboard') {
-    return (
-      <>
-        {isProcessingFiles && <LoadingOverlay message={`Analyzing ${uploadProgress.filename}...`} progress={uploadProgress.total > 0 ? uploadProgress : undefined} />}
-        {isDataLoading && <LoadingOverlay message="Syncing with cloud..." />}
-        <DragOverlay isDragging={isDragging} />
-        {notification && <Toast message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
-        <div className="relative min-h-screen">
-          <div className="absolute top-4 right-4 lg:right-8 z-50">
-             <TopBar />
-          </div>
-          <Dashboard 
-            resumes={resumes} 
-            memory={userMemory}
-            onEdit={handleEdit} 
-            onNew={handleCreateNew} 
-            onNewFromMemory={() => setIsMemoryModalOpen(true)}
-            onDelete={handleDeleteResume}
-            onFilesDropped={handleFilesDropped} 
-            isProcessingFiles={isProcessingFiles}
-            user={user}
-            onSignOut={handleSignOut}
-            onUpdateMemory={handleUpdateMemory}
-          />
-        </div>
-        
-        {/* Modal Definitions */}
-        <Modal isOpen={isMemoryModalOpen} onClose={() => setIsMemoryModalOpen(false)} title="Generate Resume from Memory">
-          <div className="space-y-4">
-             <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 text-sm text-slate-300 flex gap-3">
-               <HelpCircle className="w-5 h-5 text-indigo-400 flex-shrink-0" />
-               <p>AI will build a new resume using <strong className="text-white">{userMemory.experiences.length} experiences</strong>, <strong className="text-white">{userMemory.educations.length} education</strong>, <strong className="text-white">{userMemory.projects.length} projects</strong>, and <strong className="text-white">{userMemory.leadershipActivities.length} activities</strong>.</p>
-             </div>
-             <div className="bg-indigo-900/20 p-3 rounded border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-2">
-               <Sparkles className="w-3 h-3" />
-               AI Research enabled: We'll scan for 2025 industry trends relevant to your role.
-             </div>
-             <TextArea label="Target Job Description (Optional)" value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} className="h-32" placeholder="Paste job details..." />
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setIsMemoryModalOpen(false)}>Cancel</Button>
-                <Button variant="ai" onClick={handleCreateFromMemory} loading={isGeneratingFromMemory}><Wand2 className="w-4 h-4 mr-2" /> Generate</Button>
-              </div>
-          </div>
-        </Modal>
-
-        {/* Profile Settings Modal */}
-        <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="Account Settings">
-          <div className="space-y-6">
-            <div className="flex items-center gap-4 mb-6">
-               <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-xl">
-                 {user?.displayName?.charAt(0) || 'U'}
-               </div>
-               <div>
-                 <h3 className="font-bold text-white">{user?.displayName}</h3>
-                 <p className="text-sm text-slate-500">{user?.email}</p>
-               </div>
-            </div>
-            
-            <div className="space-y-3">
-              <h4 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">Linked Accounts</h4>
-              
-              {/* Google */}
-              <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
-                <div className="flex items-center gap-3">
-                   <div className="p-2 bg-white rounded-full"><svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" /><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" /></svg></div>
-                   <span className="text-slate-200 font-medium">Google</span>
-                </div>
-                {isProviderLinked('google.com') ? (
-                   <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-900/20 text-green-400 text-xs font-medium border border-green-900/30">
-                        <Check className="w-3 h-3" /> Connected
-                      </span>
-                      <button onClick={() => handleUnlinkAccount('google.com')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-900/10 rounded transition-colors" title="Disconnect">
-                        <Unlink className="w-3 h-3" /> Unlink
-                      </button>
-                   </div>
-                ) : (
-                   <Button variant="secondary" onClick={() => handleLinkAccount('google')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
-                )}
-              </div>
-
-              {/* GitHub */}
-              <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
-                <div className="flex items-center gap-3">
-                   <div className="p-2 bg-[#333] rounded-full text-white"><Github className="w-4 h-4" /></div>
-                   <span className="text-slate-200 font-medium">GitHub</span>
-                </div>
-                {isProviderLinked('github.com') ? (
-                   <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-900/20 text-green-400 text-xs font-medium border border-green-900/30">
-                        <Check className="w-3 h-3" /> Connected
-                      </span>
-                      <button onClick={() => handleUnlinkAccount('github.com')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-900/10 rounded transition-colors" title="Disconnect">
-                        <Unlink className="w-3 h-3" /> Unlink
-                      </button>
-                   </div>
-                ) : (
-                   <Button variant="secondary" onClick={() => handleLinkAccount('github')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
-                )}
-              </div>
-
-              {/* LinkedIn */}
-              <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
-                <div className="flex items-center gap-3">
-                   <div className="p-2 bg-[#0077b5] rounded-full text-white"><Linkedin className="w-4 h-4" /></div>
-                   <span className="text-slate-200 font-medium">LinkedIn</span>
-                </div>
-                {/* Note: Provider ID might be 'oidc.linkedin' or 'linkedin.com' depending on config */}
-                {(isProviderLinked('oidc.linkedin') || isProviderLinked('linkedin.com')) ? (
-                   <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-900/20 text-green-400 text-xs font-medium border border-green-900/30">
-                        <Check className="w-3 h-3" /> Connected
-                      </span>
-                      <button onClick={() => handleUnlinkAccount('oidc.linkedin')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-900/10 rounded transition-colors" title="Disconnect">
-                        <Unlink className="w-3 h-3" /> Unlink
-                      </button>
-                   </div>
-                ) : (
-                   <Button variant="secondary" onClick={() => handleLinkAccount('linkedin')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
-                )}
-              </div>
-
-            </div>
-            <div className="flex justify-end pt-4">
-               <Button variant="ghost" onClick={() => setIsProfileModalOpen(false)}>Close</Button>
-            </div>
-          </div>
-        </Modal>
-
-      </>
-    );
-  }
-
   return (
     <div className="flex flex-col h-[100dvh] bg-slate-950 text-slate-200 overflow-hidden">
       {isProcessingFiles && <LoadingOverlay message={`Analyzing ${uploadProgress.filename}...`} progress={uploadProgress.total > 0 ? uploadProgress : undefined} />}
       {isFixingATS && <LoadingOverlay message="Auto-Optimizing for ATS..." />}
-      {/* Researching state is now handled inside tailor/memory functions, but we could add a generic one if needed. 
-          For now, 'isTailoring' and 'isGeneratingFromMemory' cover the loading states. */}
       
       <DragOverlay isDragging={isDragging} />
       {notification && <Toast message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
@@ -802,12 +708,6 @@ const App = () => {
                          {atsAnalysis.weaknesses.slice(0, 2).map((w, i) => (
                            <div key={i} className="flex items-start gap-1.5 text-slate-400"><AlertCircle className="w-3 h-3 mt-0.5 text-red-400 flex-shrink-0" /> {w}</div>
                          ))}
-                      </div>
-                    )}
-                    {atsAnalysis.keywords_missing.length > 0 && (
-                      <div className="p-2 bg-slate-800 rounded border border-slate-700">
-                        <strong className="text-slate-400 block mb-1">Missing Keywords:</strong>
-                        <div className="flex flex-wrap gap-1">{atsAnalysis.keywords_missing.slice(0, 4).map((k,i) => <span key={i} className="px-1.5 py-0.5 bg-slate-700 rounded text-[10px] text-slate-300">{k}</span>)}</div>
                       </div>
                     )}
                   </div>
@@ -889,7 +789,109 @@ const App = () => {
         </div>
       </Modal>
 
-      {/* AI Research Modal Removed - Functionality integrated into Tailor/Memory */}
+        <Modal isOpen={isMemoryModalOpen} onClose={() => setIsMemoryModalOpen(false)} title="Generate Resume from Memory">
+          <div className="space-y-4">
+             <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 text-sm text-slate-300 flex gap-3">
+               <HelpCircle className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+               <p>AI will build a new resume using <strong className="text-white">{userMemory.experiences.length} experiences</strong>, <strong className="text-white">{userMemory.educations.length} education</strong>, <strong className="text-white">{userMemory.projects.length} projects</strong>, and <strong className="text-white">{userMemory.leadershipActivities.length} activities</strong>.</p>
+             </div>
+             <div className="bg-indigo-900/20 p-3 rounded border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-2">
+               <Sparkles className="w-3 h-3" />
+               AI Research enabled: We'll scan for 2025 industry trends relevant to your role.
+             </div>
+             <TextArea label="Target Job Description (Optional)" value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} className="h-32" placeholder="Paste job details..." />
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setIsMemoryModalOpen(false)}>Cancel</Button>
+                <Button variant="ai" onClick={handleCreateFromMemory} loading={isGeneratingFromMemory}><Wand2 className="w-4 h-4 mr-2" /> Generate</Button>
+              </div>
+          </div>
+        </Modal>
+
+        {/* Profile Settings Modal */}
+        <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="Account Settings">
+          <div className="space-y-6">
+            <div className="flex items-center gap-4 mb-6">
+               <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-xl">
+                 {user?.displayName?.charAt(0) || 'U'}
+               </div>
+               <div>
+                 <h3 className="font-bold text-white">{user?.displayName || 'Guest'}</h3>
+                 <p className="text-sm text-slate-500">{user?.email}</p>
+               </div>
+            </div>
+            
+            {/* API Configuration Section */}
+            <div className="p-4 bg-slate-800 rounded-xl border border-indigo-500/20 mb-6">
+               <div className="flex items-center gap-2 mb-3">
+                 <Key className="w-4 h-4 text-indigo-400" />
+                 <h4 className="text-sm font-bold text-white uppercase tracking-wide">Bring Your Own Key (Required)</h4>
+               </div>
+               <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                 Enter your own Google Gemini API Key. Required for AI features.
+               </p>
+               <div className="flex gap-2">
+                 <input 
+                   type="password" 
+                   value={customApiKeyInput}
+                   onChange={(e) => setCustomApiKeyInput(e.target.value)}
+                   placeholder="AIzaSy..."
+                   className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                 />
+                 <Button onClick={handleSaveSettings} loading={isSavingSettings} className="h-full py-2 px-4 text-xs">
+                   <Save className="w-4 h-4 mr-1" /> Save
+                 </Button>
+               </div>
+            </div>
+
+            {!user?.isGuest && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">Linked Accounts</h4>
+              
+              {/* Google */}
+              <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
+                <div className="flex items-center gap-3">
+                   <span className="text-slate-200 font-medium">Google</span>
+                </div>
+                {isProviderLinked('google.com') ? (
+                   <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-900/20 text-green-400 text-xs font-medium border border-green-900/30">
+                        <Check className="w-3 h-3" /> Connected
+                      </span>
+                      <button onClick={() => handleUnlinkAccount('google.com')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-900/10 rounded transition-colors" title="Disconnect">
+                        <Unlink className="w-3 h-3" /> Unlink
+                      </button>
+                   </div>
+                ) : (
+                   <Button variant="secondary" onClick={() => handleLinkAccount('google')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
+                )}
+              </div>
+
+              {/* GitHub */}
+              <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
+                <div className="flex items-center gap-3">
+                   <span className="text-slate-200 font-medium">GitHub</span>
+                </div>
+                {isProviderLinked('github.com') ? (
+                   <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-900/20 text-green-400 text-xs font-medium border border-green-900/30">
+                        <Check className="w-3 h-3" /> Connected
+                      </span>
+                      <button onClick={() => handleUnlinkAccount('github.com')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-900/10 rounded transition-colors" title="Disconnect">
+                        <Unlink className="w-3 h-3" /> Unlink
+                      </button>
+                   </div>
+                ) : (
+                   <Button variant="secondary" onClick={() => handleLinkAccount('github')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
+                )}
+              </div>
+            </div>
+            )}
+            <div className="flex justify-end pt-4">
+               <Button variant="ghost" onClick={() => setIsProfileModalOpen(false)}>Close</Button>
+            </div>
+          </div>
+        </Modal>
+
     </div>
   );
 };
