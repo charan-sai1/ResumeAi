@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings } from './types';
-import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey } from './services/geminiService';
+import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey } from './services/geminiService';
 import { extractTextFromFile } from './services/fileService';
 import { signInWithGoogle, signInWithLinkedIn, signInWithGithub, signOut, subscribeToAuth, saveResumeToDB, fetchResumesFromDB, saveMemoryToDB, fetchMemoryFromDB, deleteResumeFromDB, isConfigured, linkProvider, unlinkProvider, fetchUserSettingsFromDB, saveUserSettingsToDB } from './services/firebase';
 import ResumeEditor from './components/ResumeEditor';
@@ -194,11 +194,17 @@ const App = () => {
     }
     setIsSavingSettings(true);
     try {
+      const isValid = await validateApiKey(customApiKeyInput);
+      if (!isValid) {
+        setNotification({ type: 'error', message: 'Invalid API Key. Please check the key and try again.' });
+        return;
+      }
+
       const newSettings: UserSettings = { ...userSettings, geminiApiKey: customApiKeyInput };
       await saveUserSettingsToDB(user.uid, newSettings);
       setUserSettings(newSettings);
       setUserApiKey(customApiKeyInput || null);
-      setNotification({ type: 'success', message: 'API Key saved successfully!' });
+      setNotification({ type: 'success', message: 'API Key saved and validated successfully!' });
     } catch (e) {
       console.error("Failed to save settings:", e);
       setNotification({ type: 'error', message: 'Failed to save API Key. Please try again.' });

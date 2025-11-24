@@ -202,6 +202,28 @@ const PROMPT_TEMPLATES = {
 // 3. EXPORTED SERVICE FUNCTIONS
 // ============================================================================
 
+export const validateApiKey = async (apiKey: string): Promise<boolean> => {
+  if (!apiKey) return false;
+  try {
+    const tempAi = new GoogleGenAI({ apiKey });
+    // Make a simple, low-cost call to validate the key
+    await tempAi.models.generateContent({
+      model: MODEL_FAST,
+      contents: "hello",
+    });
+    return true;
+  } catch (error: any) {
+    console.error("API Key Validation Error:", error.message);
+    // Specific check for authentication errors if possible, otherwise any error fails validation
+    if (error.message.includes('API_KEY_INVALID') || error.message.includes('permission')) {
+      return false;
+    }
+    // For now, any error during this validation call means the key is likely invalid for our purposes.
+    // We can refine this if specific non-auth errors need to be handled differently.
+    return false;
+  }
+};
+
 export const enhanceContent = async (
   content: string, 
   context: string = "resume section"
