@@ -657,62 +657,77 @@ const App = () => {
        </div>
       
       {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden relative">
-        
-        {/* Editor Panel (Responsive) */}
-        <div className={`flex-1 lg:flex-none lg:w-[480px] flex-shrink-0 flex flex-col border-r border-slate-800 bg-slate-950 transition-all ${view === 'editor' && mobileTab === 'editor' ? 'flex' : 'hidden lg:flex'}`}>
-           {/* Desktop Toolbar (Hidden on Mobile, actions moved to bottom bar) */}
-           <div className="hidden lg:flex p-3 border-b border-slate-800 bg-slate-900/50 gap-2 flex-shrink-0">
-               <Button variant="secondary" onClick={runATSAnalysis} loading={isAnalyzingATS} className="flex-1 text-xs h-9">
-                 <Gauge className="w-4 h-4 mr-2" /> ATS Check
-               </Button>
-               <Button variant="ai" onClick={() => setTailorModalOpen(true)} className="flex-1 text-xs h-9">
-                 <Wand2 className="w-4 h-4 mr-2" /> Tailor
-               </Button>
-           </div>
-           
-           {/* Editor Content (Scrollable) */}
-           <div className="flex-1 relative overflow-hidden flex flex-col">
-              <ResumeEditor resume={currentResume} setResume={setCurrentResume} memory={userMemory} />
-              
-              {/* ATS Overlay */}
-              {atsAnalysis && (
-                <div className="absolute bottom-4 left-4 right-4 bg-slate-900/95 backdrop-blur p-5 rounded-xl border border-slate-700 shadow-2xl animate-in slide-in-from-bottom-4 z-50">
-                  <div className="flex justify-between items-center mb-3">
-                     <h4 className="font-bold text-white flex items-center gap-2"><Gauge className="w-4 h-4" /> ATS Score</h4>
-                     <span className={`text-xl font-black ${atsAnalysis.score >= 80 ? 'text-green-400' : atsAnalysis.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{atsAnalysis.score}/100</span>
-                  </div>
-                  <div className="text-xs text-slate-300 space-y-2 mb-4">
-                    {atsAnalysis.weaknesses.length > 0 && (
-                      <div className="space-y-1">
-                         <strong className="text-red-300 block mb-1">Issues Detected:</strong>
-                         {atsAnalysis.weaknesses.slice(0, 2).map((w, i) => (
-                           <div key={i} className="flex items-start gap-1.5 text-slate-400"><AlertCircle className="w-3 h-3 mt-0.5 text-red-400 flex-shrink-0" /> {w}</div>
-                         ))}
-                      </div>
+      {view === 'dashboard' ? (
+        <Dashboard
+          resumes={resumes}
+          memory={userMemory}
+          onEdit={handleEdit}
+          onNew={handleCreateNew}
+          onNewFromMemory={() => setIsMemoryModalOpen(true)}
+          onDelete={handleDeleteResume}
+          onFilesDropped={handleFilesDropped}
+          isProcessingFiles={isProcessingFiles}
+          user={user}
+          onSignOut={handleSignOut}
+          onUpdateMemory={handleUpdateMemory}
+        />
+      ) : (
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* Editor Panel (Responsive) */}
+          <div className={`flex-1 lg:flex-none lg:w-[480px] flex-shrink-0 flex flex-col border-r border-slate-800 bg-slate-950 transition-all ${mobileTab === 'editor' ? 'flex' : 'hidden lg:flex'}`}>
+             {/* Desktop Toolbar (Hidden on Mobile, actions moved to bottom bar) */}
+             <div className="hidden lg:flex p-3 border-b border-slate-800 bg-slate-900/50 gap-2 flex-shrink-0">
+                 <Button variant="secondary" onClick={runATSAnalysis} loading={isAnalyzingATS} className="flex-1 text-xs h-9">
+                   <Gauge className="w-4 h-4 mr-2" /> ATS Check
+                 </Button>
+                 <Button variant="ai" onClick={() => setTailorModalOpen(true)} className="flex-1 text-xs h-9">
+                   <Wand2 className="w-4 h-4 mr-2" /> Tailor
+                 </Button>
+             </div>
+             
+             {/* Editor Content (Scrollable) */}
+             <div className="flex-1 relative overflow-hidden flex flex-col">
+                <ResumeEditor resume={currentResume} setResume={setCurrentResume} memory={userMemory} />
+                
+                {/* ATS Overlay */}
+                {atsAnalysis && (
+                  <div className="absolute bottom-4 left-4 right-4 bg-slate-900/95 backdrop-blur p-5 rounded-xl border border-slate-700 shadow-2xl animate-in slide-in-from-bottom-4 z-50">
+                    <div className="flex justify-between items-center mb-3">
+                       <h4 className="font-bold text-white flex items-center gap-2"><Gauge className="w-4 h-4" /> ATS Score</h4>
+                       <span className={`text-xl font-black ${atsAnalysis.score >= 80 ? 'text-green-400' : atsAnalysis.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{atsAnalysis.score}/100</span>
+                    </div>
+                    <div className="text-xs text-slate-300 space-y-2 mb-4">
+                      {atsAnalysis.weaknesses.length > 0 && (
+                        <div className="space-y-1">
+                           <strong className="text-red-300 block mb-1">Issues Detected:</strong>
+                           {atsAnalysis.weaknesses.slice(0, 2).map((w, i) => (
+                             <div key={i} className="flex items-start gap-1.5 text-slate-400"><AlertCircle className="w-3 h-3 mt-0.5 text-red-400 flex-shrink-0" /> {w}</div>
+                           ))}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {atsAnalysis.score < 80 && (
+                      <Button variant="ai" onClick={handleATSFix} className="w-full text-xs mb-2">
+                         <Zap className="w-3 h-3 mr-2" fill="currentColor" /> Auto-Fix with AI
+                      </Button>
                     )}
+                    
+                    <button onClick={() => setAtsAnalysis(null)} className="absolute top-2 right-2 text-slate-500 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors">&times;</button>
                   </div>
-                  
-                  {atsAnalysis.score < 80 && (
-                    <Button variant="ai" onClick={handleATSFix} className="w-full text-xs mb-2">
-                       <Zap className="w-3 h-3 mr-2" fill="currentColor" /> Auto-Fix with AI
-                    </Button>
-                  )}
-                  
-                  <button onClick={() => setAtsAnalysis(null)} className="absolute top-2 right-2 text-slate-500 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors">&times;</button>
-                </div>
-              )}
-           </div>
-        </div>
-        
-        {/* Preview Panel (Responsive) */}
-        <div className={`flex-1 bg-slate-900 flex flex-col transition-all relative ${view === 'editor' && mobileTab === 'preview' ? 'flex' : 'hidden lg:flex'}`}>
-          {/* Preview Canvas Container */}
-          <div className="flex-1 overflow-auto p-4 flex justify-center items-start bg-slate-900/50">
-             <ResumePreview resume={currentResume} id="resume-preview-container" />
+                )}
+             </div>
+          </div>
+          
+          {/* Preview Panel (Responsive) */}
+          <div className={`flex-1 bg-slate-900 flex flex-col transition-all relative ${mobileTab === 'preview' ? 'flex' : 'hidden lg:flex'}`}>
+            {/* Preview Canvas Container */}
+            <div className="flex-1 overflow-auto p-4 flex justify-center items-start bg-slate-900/50">
+               <ResumePreview resume={currentResume} id="resume-preview-container" />
+            </div>
           </div>
         </div>
-      </div>
+      )}
       
       {/* Mobile Bottom Navigation Bar */}
        {view === 'editor' && (
