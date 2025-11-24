@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings } from './types';
-import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey, analyzeGitHubRepo } from './services/geminiService';
+import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey, analyzeGitHubRepo, processAndMergeFilesIntoMemory } from './services/geminiService';
 import { extractTextFromFile } from './services/fileService';
 import { fetchUserRepos, fetchRepoContent } from './services/githubService';
 import { signInWithGoogle, signInWithLinkedIn, signInWithGithub, signOut, subscribeToAuth, saveResumeToDB, fetchResumesFromDB, saveMemoryToDB, fetchMemoryFromDB, deleteResumeFromDB, isConfigured, linkProvider, unlinkProvider, fetchUserSettingsFromDB, saveUserSettingsToDB } from './services/firebase';
@@ -327,8 +327,8 @@ const App = () => {
     setIsProcessingFiles(true);
     setUploadProgress({ current: 0, total: files.length, filename: '' });
     
-    let updatedMemory = { ...userMemory };
-    let successCount = 0;
+    let allFileTexts: string[] = [];
+    let processedFileNames: string[] = [];
     
     try {
       for (let i = 0; i < files.length; i++) {
@@ -338,15 +338,21 @@ const App = () => {
            await new Promise(r => setTimeout(r, 300)); 
            const text = await extractTextFromFile(file);
            if (text) {
-             updatedMemory = await mergeDataIntoMemory(updatedMemory, text);
-             if (!updatedMemory.rawSourceFiles.includes(file.name)) updatedMemory.rawSourceFiles.push(file.name);
-             successCount++;
+             allFileTexts.push(text);
+             processedFileNames.push(file.name);
            }
          } catch (e) { console.error("File error", e); }
       }
-      await handleUpdateMemory(updatedMemory); // Use the callback
-      setNotification({ type: successCount > 0 ? 'success' : 'error', message: successCount > 0 ? `Processed ${successCount} files.` : 'Failed to process files.' });
-    } catch (error: any) { // Catch potential custom error from mergeDataIntoMemory
+
+      if (allFileTexts.length > 0) {
+        const updatedMemory = await processAndMergeFilesIntoMemory(allFileTexts, userMemory);
+        updatedMemory.rawSourceFiles = Array.from(new Set([...userMemory.rawSourceFiles, ...processedFileNames])); // Merge new file names
+        await handleUpdateMemory(updatedMemory);
+        setNotification({ type: 'success', message: `Processed ${allFileTexts.length} files and updated memory.` });
+      } else {
+        setNotification({ type: 'error', message: 'No processable content found in files.' });
+      }
+    } catch (error: any) { // Catch potential custom error from processAndMergeFilesIntoMemory
       setNotification({ type: 'error', message: error.message || 'Processing failed.' });
     } finally {
       setIsProcessingFiles(false);

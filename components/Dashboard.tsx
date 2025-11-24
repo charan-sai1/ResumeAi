@@ -36,11 +36,13 @@ const Dashboard: React.FC<Props> = ({
   onUseProject}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('');
+  const [manualMemoryInput, setManualMemoryInput] = useState('');
   
   // QnA State
   const [qnaAnswer, setQnaAnswer] = useState('');
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const [isSavingManualMemory, setIsSavingManualMemory] = useState(false);
 
   const filtered = resumes.filter(r => {
     const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || r.personalInfo.fullName.toLowerCase().includes(searchTerm.toLowerCase());
@@ -65,6 +67,20 @@ const Dashboard: React.FC<Props> = ({
       console.error(e);
     } finally {
       setIsGeneratingQuestions(false);
+    }
+  };
+
+  const handleSaveManualMemory = async () => {
+    if (!manualMemoryInput.trim()) return;
+    setIsSavingManualMemory(true);
+    try {
+      const updatedMemory = await mergeDataIntoMemory(memory, manualMemoryInput);
+      await onUpdateMemory(updatedMemory);
+      setManualMemoryInput(''); // Clear input after saving
+    } catch (e) {
+      console.error("Error saving manual memory:", e);
+    } finally {
+      setIsSavingManualMemory(false);
     }
   };
 
@@ -127,8 +143,131 @@ const Dashboard: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Memory, Upload & QnA Zone */}
-      <div>Hello World from QnA Zone</div>
+      {/* Memory & Upload Zone */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><BrainCircuit className="w-6 h-6 text-purple-400" /> Your AI Career Memory</h2>
+          <p className="text-slate-400 mb-4 text-sm">
+            This is your personal career knowledge base. Files you upload and information you provide
+            are distilled here, allowing AI to generate highly personalized resumes.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-4 text-sm mb-6">
+            <span className="bg-slate-800 text-purple-300 px-3 py-1 rounded-full">{memory.experiences.length} Experiences</span>
+            <span className="bg-slate-800 text-purple-300 px-3 py-1 rounded-full">{memory.educations.length} Educations</span>
+            <span className="bg-slate-800 text-purple-300 px-3 py-1 rounded-full">{memory.projects.length} Projects</span>
+            <span className="bg-slate-800 text-purple-300 px-3 py-1 rounded-full">{memory.skills.length} Skills</span>
+            <span className="bg-slate-800 text-purple-300 px-3 py-1 rounded-full">{memory.leadershipActivities.length} Activities</span>
+          </div>
+
+          <div className="mb-6">
+            <TextArea 
+              label="Add/Edit Memory (AI will integrate this)"
+              value={manualMemoryInput}
+              onChange={(e) => setManualMemoryInput(e.target.value)}
+              placeholder="Paste job descriptions, project details, achievements, or any career-related text here. AI will process it and add to your memory."
+              className="h-32"
+            />
+            <Button 
+              variant="ai" 
+              onClick={handleSaveManualMemory} 
+              loading={isSavingManualMemory}
+              disabled={!manualMemoryInput.trim()}
+              className="mt-3 w-full"
+            >
+              <Zap className="w-4 h-4 mr-2" /> Save to Memory
+            </Button>
+          </div>
+
+          {memory.rawSourceFiles.length > 0 && (
+            <div className="mb-4">
+              <h4 className="text-sm font-semibold text-white mb-2">Source Files:</h4>
+              <div className="flex flex-wrap gap-2">
+                {memory.rawSourceFiles.map((fileName, index) => (
+                  <span key={index} className="flex items-center gap-1 text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded-full">
+                    <FileText className="w-3 h-3" /> {fileName}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 border-t border-slate-800 pt-6">
+            <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><MessageSquare className="w-5 h-5 text-indigo-400" /> AI Clarification Questions</h3>
+            {activeQuestions.length > 0 ? (
+              <Card className="p-4 border border-indigo-500/30 bg-indigo-900/10">
+                <p className="text-white font-medium mb-3">{currentQuestion.question}</p>
+                {currentQuestion.options && currentQuestion.options.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {currentQuestion.options.map((option, index) => (
+                      <Button key={index} variant="secondary" onClick={() => handleSubmitAnswer(option)} className="text-xs">
+                        {option}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Input 
+                    type="text"
+                    value={qnaAnswer}
+                    onChange={(e) => setQnaAnswer(e.target.value)}
+                    placeholder="Type your answer here..."
+                    className="flex-grow"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') handleSubmitAnswer();
+                    }}
+                  />
+                  <Button onClick={() => handleSubmitAnswer()} loading={isSubmittingAnswer} disabled={!qnaAnswer.trim()}>
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+              </Card>
+            ) : (
+              <>
+                <p className="text-slate-500 text-sm mb-4">
+                  AI can ask clarifying questions to enrich your memory.
+                </p>
+                <Button 
+                  variant="secondary" 
+                  onClick={handleGenerateQuestions} 
+                  loading={isGeneratingQuestions}
+                  className="w-full"
+                >
+                  <MessageSquare className="w-4 h-4 mr-2" /> Generate Questions
+                </Button>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card className="flex flex-col items-center justify-center p-6 border-dashed border-slate-700 bg-slate-900/50">
+          <UploadCloud className="w-16 h-16 text-slate-600 mb-4" />
+          <h3 className="text-lg font-semibold text-white mb-2">Drag & Drop Files</h3>
+          <p className="text-slate-400 text-center mb-4">
+            Upload your existing resumes (PDF, DOCX, TXT) to instantly build your memory.
+          </p>
+          <input 
+            type="file" 
+            multiple 
+            onChange={handleFileInput} 
+            className="hidden" 
+            id="file-upload-input"
+            disabled={isProcessingFiles}
+          />
+          <Button 
+            variant="primary" 
+            onClick={() => document.getElementById('file-upload-input')?.click()}
+            loading={isProcessingFiles}
+          >
+            <FileUp className="w-5 h-5 mr-2" /> Select Files
+          </Button>
+          {isProcessingFiles && (
+            <div className="flex items-center text-slate-400 text-sm mt-3">
+              <AlertTriangle className="w-4 h-4 mr-2" /> Processing files...
+            </div>
+          )}
+        </Card>
+      </div>
 
       {/* Analyzed GitHub Projects List */}
       {memory.githubProjects && memory.githubProjects.length > 0 && (
@@ -191,8 +330,8 @@ const Dashboard: React.FC<Props> = ({
 
       {/* Resumes List */}
       <div>
-        <div className="flex gap-4 mb-6">
-          <div className="relative flex-1">
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <div className="relative w-full sm:flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
             <input 
               type="text" 
@@ -203,7 +342,7 @@ const Dashboard: React.FC<Props> = ({
             />
           </div>
           <select 
-            className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="w-full sm:w-auto bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
             value={filterRole}
             onChange={e => setFilterRole(e.target.value)}
           >

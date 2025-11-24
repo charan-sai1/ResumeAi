@@ -513,6 +513,42 @@ export const mergeDataIntoMemory = async (currentMemory: UserProfileMemory, newT
   } catch (error) { throw new Error("Failed to merge data."); }
 };
 
+export const processAndMergeFilesIntoMemory = async (
+  fileContents: string[],
+  currentMemory: UserProfileMemory
+): Promise<UserProfileMemory> => {
+  if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
+  const ai = getAIClient();
+
+  // Combine all file contents into a single string for the prompt
+  const combinedText = fileContents.join('\n\n--- FILE BREAK ---\n\n');
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      // The prompt is carefully crafted to instruct the Gemini model
+      // to extract and merge data from multiple file contents into the existing memory structure.
+      contents: `Given the following user profile memory:
+      ${JSON.stringify(currentMemory)}
+      
+      And the following new raw data from multiple files:
+      ${combinedText}
+      
+      Extract and merge all relevant personal information, experiences, education, projects, leadership activities, and skills from the raw data into the user profile memory. Only include information that is explicitly present or clearly inferable. Do not hallucinate.
+
+      Return the updated UserProfileMemory in JSON format.`,
+      config: { responseMimeType: "application/json" }
+    });
+    
+    const newMemoryData = JSON.parse(response.text || '{}');
+    return { ...currentMemory, ...sanitizeMemory(newMemoryData), lastUpdated: Date.now() };
+
+  } catch (error) {
+    console.error("Error processing and merging files into memory:", error);
+    throw new Error("Failed to process and merge file contents into memory.");
+  }
+};
+
 export const generateMemoryQuestions = async (memory: UserProfileMemory): Promise<QnAItem[]> => {
   if (!hasApiKey()) return [];
   const ai = getAIClient();
