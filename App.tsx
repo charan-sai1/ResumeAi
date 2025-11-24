@@ -707,7 +707,7 @@ const App = () => {
                 <div className="absolute bottom-4 left-4 right-4 bg-slate-900/95 backdrop-blur p-5 rounded-xl border border-slate-700 shadow-2xl animate-in slide-in-from-bottom-4 z-50">
                   <div className="flex justify-between items-center mb-3">
                      <h4 className="font-bold text-white flex items-center gap-2"><Gauge className="w-4 h-4" /> ATS Score</h4>
-                     <span className={`text-xl font-black ${atsAnalysis.score >= 80 ? 'text-green-400' : atsAnalysis.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{atsAnalysis.score}/100}</span>
+                     <span className={`text-xl font-black ${atsAnalysis.score >= 80 ? 'text-green-400' : atsAnalysis.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{atsAnalysis.score}/100</span>
                   </div>
                   <div className="text-xs text-slate-300 space-y-2 mb-4">
                     {atsAnalysis.weaknesses.length > 0 && (
