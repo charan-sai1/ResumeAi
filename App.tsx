@@ -197,6 +197,7 @@ const App = () => {
       const isValid = await validateApiKey(customApiKeyInput);
       if (!isValid) {
         setNotification({ type: 'error', message: 'Invalid API Key. Please check the key and try again.' });
+        setIsSavingSettings(false);
         return;
       }
 
