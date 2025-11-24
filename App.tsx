@@ -78,6 +78,7 @@ const App = () => {
 
       setUser(currentUser);
       setIsAuthLoading(false);
+      setView('dashboard'); // Explicitly set view to dashboard after login and data load
       
       if (currentUser) {
         setIsDataLoading(true);
@@ -91,34 +92,6 @@ const App = () => {
           const sanitizedResumes = fetchedResumes.map(sanitizeResume);
           setResumes(sanitizedResumes);
           if (fetchedMemory) setUserMemory(sanitizeMemory(fetchedMemory));
-
-          // Load Settings (API Key)
-          if (fetchedSettings) {
-            setUserSettings(fetchedSettings);
-            if (fetchedSettings.geminiApiKey) {
-              setCustomApiKeyInput(fetchedSettings.geminiApiKey);
-              setUserApiKey(fetchedSettings.geminiApiKey);
-            } else {
-              // If logged in but no API key, prompt user
-              setIsProfileModalOpen(true);
-              setNotification({ type: 'error', message: "Action Required: Please add your Gemini API Key in Settings to continue." });
-            }
-          } else {
-              // New user / no settings
-              setIsProfileModalOpen(true);
-              setNotification({ type: 'error', message: "Action Required: Please add your Gemini API Key in Settings to continue." });
-          }
-
-          // Fix: Ensure Username is loaded if resume doesn't have one
-          setCurrentResume(prev => {
-            const existing = sanitizedResumes.length > 0 ? sanitizeResume(sanitizedResumes[0]) : prev;
-            // Prioritize currentUser.displayName if available and existing name is empty or 'Guest User'
-            if (currentUser.displayName && (!existing.personalInfo.fullName || existing.personalInfo.fullName === 'Guest User')) {
-              return { ...existing, personalInfo: { ...existing.personalInfo, fullName: currentUser.displayName } };
-            }
-            return existing;
-          });
-          setView('dashboard'); // Explicitly set view to dashboard after login and data load
 
         } catch (error) {
           console.error("Data Load Error", error);
