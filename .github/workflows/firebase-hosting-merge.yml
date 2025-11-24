@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: '20' # Use a stable Node version
       - name: Install Dependencies
-        run: npm ci # 'npm ci' is preferred over 'npm install' in CI/CD environments
+        run: npm install # 'npm ci' is preferred over 'npm install' in CI/CD environments
       # ------------------------
       - run: npm run build
       - uses: FirebaseExtended/action-hosting-deploy@v0
@@ -25,4 +25,3 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_RESUME_2C7D7 }}
           channelId: live
           projectId: resume-2c7d7
-          target: 'ai-resume-24'
