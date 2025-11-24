@@ -152,51 +152,179 @@ export const sanitizeMemory = (data: any): UserProfileMemory => {
 // ============================================================================
 
 const PROMPT_TEMPLATES = {
+
   enhance: (content: string, context: string) => `
-    You are an expert executive resume writer. 
-    Task: Enhance the following text.
-    Context/Instructions: ${context}
-    
-    Requirements for "1-Minute Readability":
-    - **Power Verbs Only**: Start every bullet with a strong action verb.
-    - **Ultra-Concise**: Remove fluff.
-    - **Quantify Impact**: MANDATORY. Use numbers/metrics.
-    - **Formatting**: Start EACH bullet with an asterisk (*) followed by a space. Use **bold** for metrics.
-    
-    Input Text: "${content}"
-    
-    Return JSON: { refinedText, impactScore, changes }
+  ROLE: You are a world-class Executive Resume Strategist and Fortune-500 Career Copywriter.
+  OBJECTIVE: Transform the input into an elite, high-impact, recruiter-optimized resume section.
+
+  CORE PRINCIPLES:
+  1. Zero fluff. Every word must add measurable value.
+  2. Recruiter scanning time: < 6 seconds.
+  3. ATS + Human Optimized.
+
+  TASK: Intensify and enhance the following content.
+  Context: ${context}
+
+  STRICT FORMAT RULES:
+  - Each bullet MUST:
+    • Start with "* "
+    • Begin with a Power Verb (Led, Engineered, Accelerated, Optimized, Delivered, Orchestrated, Scaled, Built, Automated, Reduced, Increased, Revamped, Pioneered, Streamlined)
+    • Follow this structure:
+      Action + What + How + Impact
+
+  IMPACT RULES (MANDATORY):
+  - Include quantified metrics in **bold** (%, $, time, users, performance, scale, revenue, efficiency).
+  - Use realistic, professional business metrics.
+  - If none exist, intelligently infer based on context.
+
+  READABILITY RULES:
+  - 1-line bullets only
+  - Ultra concise, executive tone
+  - No passive voice
+
+  Input Content:
+  "${content}"
+
+  OUTPUT FORMAT (JSON ONLY):
+  {
+    "refinedText": "...",
+    "impactScore": number (0-100 based on strength + clarity + metrics),
+    "changes": ["Specific change 1", "Specific change 2", ...]
+  }
   `,
+
+
   generateFromMemory: (memory: UserProfileMemory, sectionType: string, contextString: string) => `
-    You are an expert Resume Writer.
-    Memory: ${JSON.stringify(memory)}
-    Task: Write "${sectionType}" content.
-    Context: ${contextString}
-    Rules: Use memory, Quantify impact, Bold metrics, Return bullets (*).
-    Output: ONLY text.
+  ROLE: You are a Senior Resume Architect specializing in high-performance profiles.
+
+  MEMORY DATA SOURCE:
+  ${JSON.stringify(memory)}
+
+  TASK: Generate a premium-quality "${sectionType}" section using ONLY the memory provided.
+
+  CONTEXT:
+  ${contextString}
+
+  RULES:
+  - Output bullet points only
+  - Each bullet starts with "* "
+  - Use Power Verbs
+  - Include quantified metrics in **bold**
+  - Focus on measurable achievements, not responsibilities
+  - Maximum impact, minimal words
+  - ATS-friendly skill keywords embedded naturally
+
+  STRUCTURE PER BULLET:
+  Action + Result + Metric + Tool/Method
+
+  OUTPUT:
+  Only the final bullet points. No explanations. No headers. No commentary.
   `,
+
+
   optimizeSkills: (skills: string[]) => `
-    Optimize skills: ${JSON.stringify(skills)}
-    Return JSON: { skills: string[] }
+  ROLE: You are an ATS Optimization Engine and Talent Intelligence System.
+
+  INPUT SKILLS:
+  ${JSON.stringify(skills)}
+
+  OBJECTIVE: Deliver a recruiter-ready, ATS-dominant skill stack.
+
+  REQUIREMENTS:
+  - Remove duplicates & weak variations
+  - Normalize naming to industry standards
+  - Add missing but highly relevant modern skills
+  - Prioritize by market demand & job relevance
+  - Group logically (Technical, Tools, Frameworks, Soft Skills)
+
+  OUTPUT FORMAT (JSON ONLY):
+  {
+    "skills": ["Optimized Skill 1", "Optimized Skill 2", ...]
+  }
   `,
+
+
   analyzeATS: (resume: Resume) => `
-    ATS Scan for "${resume.title}".
-    Resume: ${JSON.stringify(resume)}
-    Score 0-100. Return JSON: { score, strengths, weaknesses, keywords_missing }
+  ROLE: Advanced ATS Analyzer + Hiring Manager Simulation System
+
+  TARGET ROLE:
+  ${resume.title}
+
+  RESUME DATA:
+  ${JSON.stringify(resume)}
+
+  TASK:
+  Perform a deep ATS scan and strategic evaluation.
+
+  ANALYZE FOR:
+  - Keyword density
+  - Role alignment
+  - Skill relevance
+  - Impact clarity
+  - Formatting structure
+
+  RETURN JSON ONLY:
+  {
+    "score": number (0-100),
+    "strengths": ["..."],
+    "weaknesses": ["..."],
+    "keywords_missing": ["..."],
+    "recommendations": ["Actionable improvement suggestions"]
+  }
   `,
+
+
   rewriteATS: (resume: Resume, analysis: ATSAnalysis) => `
-    Rewrite to fix ATS issues.
-    Weaknesses: ${JSON.stringify(analysis.weaknesses)}
-    Target: "${resume.title}"
-    Return JSON: Full Resume.
+  ROLE: Resume Reconstruction AI for ATS Domination
+
+  ORIGINAL RESUME:
+  ${JSON.stringify(resume)}
+
+  IDENTIFIED WEAKNESSES:
+  ${JSON.stringify(analysis.weaknesses)}
+
+  TARGET ROLE:
+  ${resume.title}
+
+  OBJECTIVE:
+  Rebuild the resume to maximize ATS performance and recruiter conversion.
+
+  RULES:
+  - Preserve professional integrity
+  - Enhance clarity, impact, and keyword relevance
+  - Strengthen bullet metrics
+
+  OUTPUT:
+  Full rewritten resume in structured JSON format.
   `,
+
+
   tailor: (resume: Resume, jobDescription: string, research: string) => `
-    Tailor resume for JD.
-    JD: ${jobDescription}
-    Research: ${research}
-    Return JSON: Full Resume.
+  ROLE: Intelligent Resume Tailoring Engine
+
+  TARGET JOB DESCRIPTION:
+  ${jobDescription}
+
+  RESEARCH INSIGHTS:
+  ${research}
+
+  CANDIDATE RESUME:
+  ${JSON.stringify(resume)}
+
+  OBJECTIVE:
+  Create a hyper-targeted, role-specific resume optimized for interview shortlisting.
+
+  RULES:
+  - Mirror JD language strategically
+  - Insert missing critical keywords naturally
+  - Emphasize relevant achievements
+  - Maintain professional voice and authenticity
+
+  OUTPUT FORMAT:
+  Full Resume JSON structured for immediate application use.
   `
 };
+
 
 // ============================================================================
 // 3. EXPORTED SERVICE FUNCTIONS
