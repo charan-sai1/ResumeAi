@@ -188,28 +188,38 @@ const App = () => {
   };
 
   const handleSaveSettings = async () => {
+    console.log("handleSaveSettings: Function started.");
     if (!user) {
       setNotification({ type: 'error', message: 'You must be logged in to save settings.' });
+      console.log("handleSaveSettings: No user, returning.");
       return;
     }
+    console.log("handleSaveSettings: Setting isSavingSettings to true.");
     setIsSavingSettings(true);
     try {
+      console.log("handleSaveSettings: Calling validateApiKey...");
       const isValid = await validateApiKey(customApiKeyInput);
+      console.log("handleSaveSettings: validateApiKey returned:", isValid);
+
       if (!isValid) {
+        console.log("handleSaveSettings: API key is invalid.");
         setNotification({ type: 'error', message: 'Invalid API Key. Please check the key and try again.' });
         setIsSavingSettings(false);
         return;
       }
 
+      console.log("handleSaveSettings: API key is valid. Saving to DB...");
       const newSettings: UserSettings = { ...userSettings, geminiApiKey: customApiKeyInput };
       await saveUserSettingsToDB(user.uid, newSettings);
+      console.log("handleSaveSettings: DB save successful. Updating local state.");
       setUserSettings(newSettings);
       setUserApiKey(customApiKeyInput || null);
       setNotification({ type: 'success', message: 'API Key saved and validated successfully!' });
     } catch (e) {
-      console.error("Failed to save settings:", e);
+      console.error("handleSaveSettings: Caught an error:", e);
       setNotification({ type: 'error', message: 'Failed to save API Key. Please try again.' });
     } finally {
+      console.log("handleSaveSettings: Finally block reached. Setting isSavingSettings to false.");
       setIsSavingSettings(false);
     }
   };
