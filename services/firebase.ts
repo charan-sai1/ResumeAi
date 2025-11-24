@@ -227,9 +227,18 @@ export const fetchMemoryFromDB = async (userId: string): Promise<UserProfileMemo
 
 export const saveUserSettingsToDB = async (userId: string, settings: UserSettings) => {
   if (!dbInstance) return;
-  try {
+
+  const savePromise = (async () => {
     const settingsDocRef = doc(dbInstance, 'users', userId, 'settings', 'config');
     await setDoc(settingsDocRef, settings);
+  })();
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Saving settings timed out')), 15000) // 15 seconds
+  );
+
+  try {
+    await Promise.race([savePromise, timeoutPromise]);
   } catch (e) {
     console.error("Error saving settings:", e);
     throw e;

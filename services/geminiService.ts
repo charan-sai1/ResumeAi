@@ -203,36 +203,35 @@ const PROMPT_TEMPLATES = {
 // ============================================================================
 
 export const validateApiKey = async (apiKey: string): Promise<boolean> => {
-  console.log("validateApiKey: Starting validation...");
-  if (!apiKey) {
-    console.log("validateApiKey: No API key provided.");
-    return false;
-  }
+  if (!apiKey) return false;
+
+  let timeoutId: NodeJS.Timeout;
+
+  const timeoutPromise = new Promise<boolean>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('API key validation timed out'));
+    }, 10000); // 10 seconds
+  });
 
   const validationPromise = (async () => {
-    console.log("validateApiKey: Validation promise started.");
-    const tempAi = new GoogleGenAI({ apiKey });
-    await tempAi.models.generateContent({
-      model: MODEL_FAST,
-      contents: "hello",
-    });
-    console.log("validateApiKey: Validation API call successful.");
-    return true;
+    try {
+      const tempAi = new GoogleGenAI({ apiKey });
+      await tempAi.models.generateContent({
+        model: MODEL_FAST,
+        contents: "hello",
+      });
+      return true;
+    } catch (error) {
+      throw error; // Re-throw to be caught by the outer catch
+    }
   })();
 
-  const timeoutPromise = new Promise<boolean>((_, reject) =>
-    setTimeout(() => {
-      console.log("validateApiKey: Timeout promise rejecting.");
-      reject(new Error('API key validation timed out'));
-    }, 10000) // 10 seconds
-  );
-
   try {
-    console.log("validateApiKey: Awaiting Promise.race...");
     const result = await Promise.race([validationPromise, timeoutPromise]);
-    console.log("validateApiKey: Promise.race resolved with:", result);
+    clearTimeout(timeoutId!);
     return result;
   } catch (error: any) {
+    clearTimeout(timeoutId!);
     console.error("API Key Validation Error:", error.message);
     return false;
   }
