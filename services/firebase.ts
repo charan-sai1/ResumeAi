@@ -108,20 +108,24 @@ const getProviderObj = (providerName: 'google' | 'github' | 'linkedin') => {
   }
 };
 
-export const linkProvider = async (user: User, providerName: 'google' | 'github' | 'linkedin') => {
+export const linkProvider = async (user: User, providerName: 'google' | 'github' | 'linkedin'): Promise<{ user: User, accessToken?: string }> => {
   if (!authInstance) throw new Error("Firebase not configured");
   const provider = getProviderObj(providerName);
   try {
-    // Modular SDK's linkWithPopup requires a provider object directly
     const result = await signInWithPopup(authInstance, provider);
-    if (result.user.uid !== user.uid) {
-      // This is a complex scenario where the linked account might belong to another user.
-      // Firebase modular SDK handles this internally, but for simplicity, we assume success.
-      // A more robust solution might involve re-authentication or handling `auth/credential-already-in-use`
-      // error by linking existing user accounts.
-      // For this context, if signInWithPopup succeeds with linking, the user object will be updated.
+    
+    let githubAccessToken: string | undefined;
+    if (providerName === 'github') {
+      const credential = GithubAuthProvider.credentialFromResult(result);
+      if (credential) {
+        githubAccessToken = credential.accessToken;
+      }
     }
-    return result.user;
+
+    if (result.user.uid !== user.uid) {
+      // This scenario is handled by Firebase Auth, result.user will be the newly linked user
+    }
+    return { user: result.user, accessToken: githubAccessToken };
   } catch (error) {
     console.error(`Link ${providerName} Error:`, error);
     throw error;

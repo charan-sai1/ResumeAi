@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings } from './types';
-import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey } from './services/geminiService';
+import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey, analyzeGitHubRepo } from './services/geminiService';
 import { extractTextFromFile } from './services/fileService';
+import { fetchUserRepos, fetchRepoContent } from './services/githubService';
 import { signInWithGoogle, signInWithLinkedIn, signInWithGithub, signOut, subscribeToAuth, saveResumeToDB, fetchResumesFromDB, saveMemoryToDB, fetchMemoryFromDB, deleteResumeFromDB, isConfigured, linkProvider, unlinkProvider, fetchUserSettingsFromDB, saveUserSettingsToDB } from './services/firebase';
 import ResumeEditor from './components/ResumeEditor';
 import ResumePreview from './components/ResumePreview';
@@ -61,6 +62,10 @@ const App = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [notification, setNotification] = useState<{type: 'success'|'error', message: string, tips?: React.ReactNode} | null>(null);
 
+  // --- GitHub Integration State ---
+  const [githubAccessToken, setGithubAccessToken] = useState<string | null>(null);
+  const [isAnalyzingGitHubProjects, setIsAnalyzingGitHubProjects] = useState(false);
+
   // --- Domain Detection ---
   useEffect(() => {
     const hostname = window.location.hostname;
@@ -91,6 +96,18 @@ const App = () => {
           const sanitizedResumes = fetchedResumes.map(sanitizeResume);
           setResumes(sanitizedResumes);
           if (fetchedMemory) setUserMemory(sanitizeMemory(fetchedMemory));
+
+          // Load Settings (API Key and GitHub Token)
+          if (fetchedSettings) {
+            setUserSettings(fetchedSettings);
+            if (fetchedSettings.geminiApiKey) {
+              setCustomApiKeyInput(fetchedSettings.geminiApiKey);
+              setUserApiKey(fetchedSettings.geminiApiKey);
+            }
+            if (fetchedSettings.githubAccessToken) {
+              setGithubAccessToken(fetchedSettings.githubAccessToken);
+            }
+          }
 
         } catch (error) {
           console.error("Data Load Error", error);
@@ -161,7 +178,14 @@ const App = () => {
   const handleLinkAccount = async (provider: 'google' | 'github' | 'linkedin') => {
     if (!user) return;
     try {
-      await linkProvider(user, provider);
+      const result = await linkProvider(user, provider);
+      if (provider === 'github' && result.accessToken) {
+        setGithubAccessToken(result.accessToken);
+        // Save the GitHub Access Token to user settings
+        const newSettings = { ...userSettings, githubAccessToken: result.accessToken };
+        await saveUserSettingsToDB(user.uid, newSettings);
+        setUserSettings(newSettings); // Update local state
+      }
       setNotification({ type: 'success', message: `${provider.charAt(0).toUpperCase() + provider.slice(1)} linked successfully!` });
     } catch (e: any) {
       if (e.code === 'auth/credential-already-in-use') {
@@ -374,6 +398,80 @@ const App = () => {
   }, [handleDragEnter, handleDragLeave, handleDragOver, handleDrop]);
 
 
+  // --- GitHub Integration Handlers ---
+  const handleFetchAndAnalyzeGitHubProjects = useCallback(async () => {
+    if (!user) {
+      setNotification({ type: 'error', message: 'You must be logged in to fetch GitHub projects.' });
+      return;
+    }
+    if (!githubAccessToken) {
+      setNotification({ type: 'error', message: 'GitHub account not linked or access token missing.' });
+      return;
+    }
+    if (!hasApiKey()) {
+      setNotification({ type: 'error', message: 'Gemini API Key required for AI analysis. Check Settings.' });
+      setIsProfileModalOpen(true);
+      return;
+    }
+
+    setIsAnalyzingGitHubProjects(true);
+    setNotification(null); // Clear previous notifications
+
+    try {
+      setNotification({ type: 'success', message: 'Fetching GitHub repositories...', tips: 'This might take a moment for analysis.' });
+      const repos = await fetchUserRepos(githubAccessToken);
+      const analyzedProjects: AnalyzedProject[] = [];
+
+      for (const repo of repos) {
+        if (repo.fork || repo.private) {
+          // Skip forked or private repos for now, unless specific permission is granted
+          continue;
+        }
+
+        let readmeContent: string | null = null;
+        try {
+          // repo.owner.login is available in the GitHubRepo interface
+          readmeContent = await fetchRepoContent(repo.owner.login, repo.name, 'README.md', githubAccessToken);
+        } catch (readMeError) {
+          console.warn(`Could not fetch README for ${repo.full_name}:`, readMeError);
+        }
+
+        // AI Analyze each repo
+        try {
+          const analyzed = await analyzeGitHubRepo(repo, readmeContent);
+          analyzedProjects.push(analyzed);
+          setNotification({ type: 'success', message: `Analyzed ${repo.full_name}...`, tips: `Processed ${analyzedProjects.length} of ${repos.length} public repositories.` });
+        } catch (analyzeError) {
+          console.error(`Error analyzing ${repo.full_name}:`, analyzeError);
+          // Add a basic entry even if AI analysis fails
+          analyzedProjects.push({
+            id: repo.full_name,
+            repoName: repo.full_name,
+            description: repo.description || 'No description provided.',
+            htmlUrl: repo.html_url,
+            language: repo.language,
+            lastActivity: repo.pushed_at,
+            completenessScore: 0, workingStatus: 'unknown', advancedTechUsed: [],
+            activityLevel: 'unknown', majorProject: false, domainSpecific: [],
+            aiSummary: 'AI analysis failed for this project.',
+            suggestedBulletPoints: [],
+          });
+        }
+      }
+
+      // Update user memory
+      const newMemory = { ...userMemory, githubProjects: analyzedProjects };
+      await handleUpdateMemory(newMemory);
+      setNotification({ type: 'success', message: `Successfully fetched and analyzed ${analyzedProjects.length} GitHub projects!` });
+
+    } catch (error: any) {
+      console.error("Error fetching/analyzing GitHub projects:", error);
+      setNotification({ type: 'error', message: `Failed to process GitHub projects: ${error.message}` });
+    } finally {
+      setIsAnalyzingGitHubProjects(false);
+    }
+  }, [user, githubAccessToken, userMemory, hasApiKey, setIsProfileModalOpen, handleUpdateMemory, setNotification]);
+
   // --- Handlers (continued) ---
 
   const handleCreateNew = () => {
@@ -467,6 +565,31 @@ const App = () => {
     if (user && !user.isGuest) await deleteResumeFromDB(user.uid, id);
     setNotification({ type: 'success', message: 'Resume deleted.' });
   };
+
+  const handleUseProjectInResume = useCallback((project: AnalyzedProject) => {
+    const newResume = {
+      ...initialResume,
+      id: Date.now().toString(),
+      title: project.repoName,
+      lastModified: Date.now(),
+      personalInfo: { ...initialResume.personalInfo, fullName: user?.displayName || '' },
+      projects: [{
+        id: project.id,
+        name: project.repoName,
+        description: project.aiSummary, // Use AI summary as description
+        link: project.htmlUrl, // Link to the GitHub repo
+        repoLink: project.htmlUrl, // Assuming repoLink is also htmlUrl
+      }],
+      // Optionally add advancedTechUsed as skills
+      skills: [...initialResume.skills, ...project.advancedTechUsed],
+      // If you want to populate suggested bullet points directly
+      // experience: [{ id: 'proj-bullets', role: project.repoName, company: 'Personal Projects', startDate: '', endDate: '', description: project.suggestedBulletPoints?.join('\n') || '' }]
+    };
+    setCurrentResume(newResume);
+    setView('editor');
+    setMobileTab('editor');
+    setNotification({ type: 'success', message: `Created new resume with project: ${project.repoName}` });
+  }, [user?.displayName, initialResume, setNotification]);
 
   const runATSAnalysis = async () => {
     if (!hasApiKey()) {
@@ -675,6 +798,7 @@ const App = () => {
               user={user}
               onSignOut={handleSignOut}
               onUpdateMemory={handleUpdateMemory}
+              onUseProject={handleUseProjectInResume}
             />
           </div>
         ) : (
@@ -887,6 +1011,19 @@ const App = () => {
                    <Button variant="secondary" onClick={() => handleLinkAccount('github')} className="h-8 text-xs px-3"><LinkIcon className="w-3 h-3 mr-1" /> Connect</Button>
                 )}
               </div>
+
+              {isProviderLinked('github.com') && githubAccessToken && (
+                <div className="pt-4 border-t border-slate-800 mt-4">
+                  <Button 
+                    variant="ai" 
+                    onClick={handleFetchAndAnalyzeGitHubProjects} 
+                    loading={isAnalyzingGitHubProjects}
+                    className="w-full text-sm"
+                  >
+                    <Zap className="w-4 h-4 mr-2" /> Fetch & Analyze GitHub Projects
+                  </Button>
+                </div>
+              )}
             </div>
             )}
             <div className="flex justify-end pt-4">

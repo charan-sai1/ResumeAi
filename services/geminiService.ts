@@ -417,3 +417,87 @@ export const generateResumeFromMemory = async (memory: UserProfileMemory, jobDes
     return { ...sanitizeResume(JSON.parse(response.text || '{}')), researchContext: { summary: research.text, sources: research.chunks } };
   } catch (error) { throw error; }
 };
+
+import { GitHubRepo, AnalyzedProject } from '../types';
+
+export const analyzeGitHubRepo = async (repoData: GitHubRepo, readmeContent: string | null): Promise<AnalyzedProject> => {
+  if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
+  const ai = getAIClient();
+
+  const prompt = `
+    Analyze the following GitHub repository for a resume.
+    Repository Name: ${repoData.name}
+    Full Name: ${repoData.full_name}
+    Description: ${repoData.description || 'No description provided.'}
+    URL: ${repoData.html_url}
+    Language: ${repoData.language || 'Not specified.'}
+    Stars: ${repoData.stargazers_count}
+    Forks: ${repoData.forks_count}
+    Last Pushed: ${repoData.pushed_at}
+    Topics: ${repoData.topics.join(', ') || 'No topics.'}
+    Has Issues: ${repoData.has_issues ? 'Yes' : 'No'}
+    Has Homepage: ${repoData.homepage ? 'Yes' : 'No'}
+    Archived: ${repoData.archived ? 'Yes' : 'No'}
+    ${readmeContent ? `\nREADME Content:\n${readmeContent.substring(0, 2000)}` : ''}
+
+    Based on the above data, provide a JSON analysis with the following properties:
+    - completenessScore (number, 0-100: How complete and production-ready the project appears)
+    - workingStatus (string: 'unknown' | 'working' | 'not working' - infer from README, homepage, issues)
+    - advancedTechUsed (string[]: List of advanced technologies or algorithms used)
+    - activityLevel (string: 'low' | 'medium' | 'high' - based on last pushed date, commits (if known), issues)
+    - majorProject (boolean: Is this a significant, impactful project?)
+    - domainSpecific (string[]: E.g., ['web development', 'machine learning', 'data science', 'mobile development'])
+    - aiSummary (string: A concise, AI-generated summary suitable for a resume)
+    - suggestedBulletPoints (string[]: 3-5 concise bullet points highlighting achievements and impact for a resume, quantified where possible.)
+
+    Ensure the JSON is correctly formatted.
+    `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST, // Using the fast model for analysis
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+    const result = JSON.parse(response.text || '{}');
+
+    // Sanitize and map to AnalyzedProject interface
+    const analyzedProject: AnalyzedProject = {
+      id: repoData.full_name,
+      repoName: repoData.full_name,
+      description: repoData.description || '',
+      htmlUrl: repoData.html_url,
+      language: repoData.language,
+      lastActivity: repoData.pushed_at,
+      completenessScore: result.completenessScore || 0,
+      workingStatus: result.workingStatus || 'unknown',
+      advancedTechUsed: result.advancedTechUsed || [],
+      activityLevel: result.activityLevel || 'unknown', // Need to map to 'low'|'medium'|'high'
+      majorProject: result.majorProject || false,
+      domainSpecific: result.domainSpecific || [],
+      aiSummary: result.aiSummary || 'AI summary unavailable.',
+      suggestedBulletPoints: result.suggestedBulletPoints || [],
+    };
+    return analyzedProject;
+
+  } catch (error) {
+    console.error("Error analyzing GitHub repo:", error);
+    // Return a default analyzed project on error
+    return {
+      id: repoData.full_name,
+      repoName: repoData.full_name,
+      description: repoData.description || '',
+      htmlUrl: repoData.html_url,
+      language: repoData.language,
+      lastActivity: repoData.pushed_at,
+      completenessScore: 0,
+      workingStatus: 'unknown',
+      advancedTechUsed: [],
+      activityLevel: 'unknown',
+      majorProject: false,
+      domainSpecific: [],
+      aiSummary: 'Analysis failed due to an AI error.',
+      suggestedBulletPoints: [],
+    };
+  }
+};
