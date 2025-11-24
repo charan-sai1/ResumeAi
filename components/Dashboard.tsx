@@ -128,9 +128,7 @@ const Dashboard: React.FC<Props> = ({
       </div>
 
       {/* Memory, Upload & QnA Zone */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* ... existing memory, upload, QnA cards ... */}
-      </div>
+      <div>Hello World from QnA Zone</div>
 
       {/* Analyzed GitHub Projects List */}
       {memory.githubProjects && memory.githubProjects.length > 0 && (
