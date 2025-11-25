@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings } from './types';
-import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey, analyzeGitHubRepo, processAndMergeFilesIntoMemory } from './services/geminiService';
+import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings, AnalyzedProject } from './types';
+import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey, analyzeGitHubRepo, processAndMergeFilesIntoMemory, scoreMultipleProjectsRelevance } from './services/geminiService';
 import { extractTextFromFile } from './services/fileService';
 import { fetchUserRepos, fetchRepoContent } from './services/githubService';
 import { signInWithGoogle, signInWithLinkedIn, signInWithGithub, signOut, subscribeToAuth, saveResumeToDB, fetchResumesFromDB, saveMemoryToDB, fetchMemoryFromDB, deleteResumeFromDB, isConfigured, linkProvider, unlinkProvider, fetchUserSettingsFromDB, saveUserSettingsToDB } from './services/firebase';
 import ResumeEditor from './components/ResumeEditor';
 import ResumePreview from './components/ResumePreview';
 import Dashboard from './components/Dashboard';
+import JobRoleSelector from './components/JobRoleSelector';
+import ProjectSelector from './components/ProjectSelector';
+import GitHubConnect from './components/GitHubConnect';
 import { Button, Modal, TextArea, Toast, LoadingOverlay, DragOverlay, Card, Input } from './components/UIComponents';
 import { Download, Wand2, ArrowLeft, Gauge, AlertCircle, LogOut, LogIn, AlertTriangle, HelpCircle, ExternalLink, UserCircle, Copy, Settings, Linkedin, Zap, Eye, Edit, Search, Sparkles, Github, Check, Link as LinkIcon, Unlink, Key, Save } from 'lucide-react';
 
@@ -21,7 +24,7 @@ const initialResume: Resume = {
 };
 
 const initialMemory: UserProfileMemory = {
-  lastUpdated: Date.now(), personalInfo: {}, experiences: [], educations: [], projects: [], skills: [], rawSourceFiles: [], qna: [], leadershipActivities: []
+  lastUpdated: Date.now(), personalInfo: {}, experiences: [], educations: [], projects: [], skills: [], rawSourceFiles: [], qna: [], leadershipActivities: [], githubProjects: []
 };
 
 const App = () => {
@@ -46,11 +49,15 @@ const App = () => {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // --- Modals & Analysis State ---
-  const [isTailorModalOpen, setTailorModalOpen] = useState(false);
-  const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
-  const [jobDescription, setJobDescription] = useState('');
-  const [isTailoring, setIsTailoring] = useState(false);
-  const [isGeneratingFromMemory, setIsGeneratingFromMemory] = useState(false);
+   const [isTailorModalOpen, setTailorModalOpen] = useState(false);
+   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
+   const [jobDescription, setJobDescription] = useState('');
+   const [selectedJobRole, setSelectedJobRole] = useState<{id: string, title: string, category: string, description: string} | null>(null);
+   const [isTailoring, setIsTailoring] = useState(false);
+   const [isGeneratingFromMemory, setIsGeneratingFromMemory] = useState(false);
+   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+   const [isScoringProjects, setIsScoringProjects] = useState(false);
+   const [scoredProjects, setScoredProjects] = useState<AnalyzedProject[]>([]);
   const [atsAnalysis, setAtsAnalysis] = useState<ATSAnalysis | null>(null);
   const [isAnalyzingATS, setIsAnalyzingATS] = useState(false);
   const [isFixingATS, setIsFixingATS] = useState(false);
@@ -65,6 +72,7 @@ const App = () => {
   // --- GitHub Integration State ---
   const [githubAccessToken, setGithubAccessToken] = useState<string | null>(null);
   const [isAnalyzingGitHubProjects, setIsAnalyzingGitHubProjects] = useState(false);
+  const [githubAnalysisProgress, setGithubAnalysisProgress] = useState({ current: 0, total: 0, repoName: '' });
 
   // --- Domain Detection ---
   useEffect(() => {
@@ -82,8 +90,7 @@ const App = () => {
 
       setUser(currentUser);
       setIsAuthLoading(false);
-      setView('dashboard'); // Explicitly set view to dashboard after login and data load
-      
+
       if (currentUser) {
         setIsDataLoading(true);
         try {
@@ -109,6 +116,22 @@ const App = () => {
             }
           }
 
+          // Check if GitHub provider and capture token on initial login
+          const isGitHubProvider = currentUser.providerData?.some((p: any) => p.providerId === 'github.com');
+          if (isGitHubProvider && !fetchedSettings?.githubAccessToken) {
+            // Prompt for API key first if not set
+            if (!fetchedSettings?.geminiApiKey) {
+              setIsProfileModalOpen(true);
+              setNotification({ type: 'success', message: 'Welcome! Please add your API key to continue.' });
+            }
+          } else if (!fetchedSettings?.geminiApiKey) {
+            // Always prompt for API key if not set
+            setIsProfileModalOpen(true);
+            setNotification({ type: 'success', message: 'Welcome! Please add your API key to continue.' });
+          }
+
+          setView('dashboard');
+
         } catch (error) {
           console.error("Data Load Error", error);
           setNotification({ type: 'error', message: 'Failed to load data from cloud.' });
@@ -124,6 +147,7 @@ const App = () => {
           setUserSettings({});
           setCustomApiKeyInput('');
           setUserApiKey(null);
+          setGithubAccessToken(null);
         }
       }
     });
@@ -157,7 +181,16 @@ const App = () => {
   const handleGitHubLogin = async () => {
     setNotification(null);
     try {
-      await signInWithGithub();
+      const result = await signInWithGithub();
+
+      // Save GitHub token if available
+      if (result.accessToken && result.user) {
+        const currentSettings = await fetchUserSettingsFromDB(result.user.uid);
+        const newSettings = { ...currentSettings, githubAccessToken: result.accessToken };
+        await saveUserSettingsToDB(result.user.uid, newSettings);
+        setGithubAccessToken(result.accessToken);
+        setUserSettings(newSettings);
+      }
     } catch (e: any) {
       handleAuthError(e, 'GitHub');
     }
@@ -185,14 +218,13 @@ const App = () => {
         const newSettings = { ...userSettings, githubAccessToken: result.accessToken };
         await saveUserSettingsToDB(user.uid, newSettings);
         setUserSettings(newSettings); // Update local state
-      }
-      setNotification({ type: 'success', message: `${provider.charAt(0).toUpperCase() + provider.slice(1)} linked successfully!` });
-    } catch (e: any) {
-      if (e.code === 'auth/credential-already-in-use') {
-        setNotification({ type: 'error', message: 'This account is already linked to another user.' });
+        setNotification({ type: 'success', message: `GitHub linked successfully! Access token saved.` });
       } else {
-        setNotification({ type: 'error', message: `Failed to link ${provider}.` });
+        setNotification({ type: 'success', message: `${provider.charAt(0).toUpperCase() + provider.slice(1)} linked successfully!` });
       }
+    } catch (e: any) {
+      console.error('Link account error:', e);
+      setNotification({ type: 'error', message: e.message || `Failed to link ${provider}.` });
     }
   };
 
@@ -304,12 +336,20 @@ const App = () => {
   
   const handleUpdateMemory = useCallback(async (newMemory: UserProfileMemory) => {
     const safeMemory = sanitizeMemory(newMemory);
+    console.log('Updating memory with:', {
+      experiences: safeMemory.experiences.length,
+      educations: safeMemory.educations.length,
+      projects: safeMemory.projects.length,
+      githubProjects: safeMemory.githubProjects?.length || 0
+    });
     setUserMemory(safeMemory);
-    
+
     if (user && !user.isGuest) {
       await saveMemoryToDB(user.uid, safeMemory);
+      console.log('Memory saved to Firebase');
     } else if (user?.isGuest) {
       localStorage.setItem('guest_memory', JSON.stringify(safeMemory));
+      console.log('Memory saved to localStorage');
     }
   }, [user]); // Depend on user
 
@@ -405,6 +445,44 @@ const App = () => {
 
 
   // --- GitHub Integration Handlers ---
+  const handleConnectGitHub = useCallback(async () => {
+    if (!user) {
+      setNotification({ type: 'error', message: 'Please sign in first.' });
+      return;
+    }
+
+    // Check if already linked
+    const isGitHubLinked = user.providerData?.some((p: any) => p.providerId === 'github.com');
+
+    if (isGitHubLinked) {
+      // Already linked, just check if we have the token
+      if (githubAccessToken) {
+        setNotification({ type: 'success', message: 'GitHub already connected! You can analyze your profile now.' });
+      } else {
+        setNotification({ type: 'error', message: 'GitHub linked but token missing. Please re-link in Profile Settings.' });
+      }
+      return;
+    }
+
+    // Not linked, trigger linking
+    try {
+      const result = await linkProvider(user, 'github');
+      if (result.accessToken) {
+        setGithubAccessToken(result.accessToken);
+        // Save the GitHub Access Token to user settings
+        const newSettings = { ...userSettings, githubAccessToken: result.accessToken };
+        await saveUserSettingsToDB(user.uid, newSettings);
+        setUserSettings(newSettings);
+        setNotification({ type: 'success', message: 'GitHub connected successfully! Now click "Analyze GitHub Profile" to scan your repositories.' });
+      } else {
+        setNotification({ type: 'error', message: 'GitHub connected but access token not received. Please try again.' });
+      }
+    } catch (e: any) {
+      console.error('Connect GitHub error:', e);
+      setNotification({ type: 'error', message: e.message || 'Failed to connect GitHub.' });
+    }
+  }, [user, githubAccessToken, userSettings]);
+
   const handleFetchAndAnalyzeGitHubProjects = useCallback(async () => {
     if (!user) {
       setNotification({ type: 'error', message: 'You must be logged in to fetch GitHub projects.' });
@@ -421,35 +499,33 @@ const App = () => {
     }
 
     setIsAnalyzingGitHubProjects(true);
-    setNotification(null); // Clear previous notifications
+    setNotification(null);
 
     try {
-      setNotification({ type: 'success', message: 'Fetching GitHub repositories...', tips: 'This might take a moment for analysis.' });
+      setNotification({ type: 'success', message: 'Fetching GitHub repositories...' });
       const repos = await fetchUserRepos(githubAccessToken);
+      const publicRepos = repos.filter(repo => !repo.fork && !repo.private);
+
+      setGithubAnalysisProgress({ current: 0, total: publicRepos.length, repoName: '' });
       const analyzedProjects: AnalyzedProject[] = [];
 
-      for (const repo of repos) {
-        if (repo.fork || repo.private) {
-          // Skip forked or private repos for now, unless specific permission is granted
-          continue;
-        }
+      for (let i = 0; i < publicRepos.length; i++) {
+        const repo = publicRepos[i];
+        setGithubAnalysisProgress({ current: i + 1, total: publicRepos.length, repoName: repo.name });
 
         let readmeContent: string | null = null;
         try {
-          // repo.owner.login is available in the GitHubRepo interface
-          readmeContent = await fetchRepoContent(repo.owner.login, repo.name, 'README.md', githubAccessToken);
+          const owner = repo.full_name.split('/')[0];
+          readmeContent = await fetchRepoContent(owner, repo.name, 'README.md', githubAccessToken);
         } catch (readMeError) {
           console.warn(`Could not fetch README for ${repo.full_name}:`, readMeError);
         }
 
-        // AI Analyze each repo
         try {
           const analyzed = await analyzeGitHubRepo(repo, readmeContent);
           analyzedProjects.push(analyzed);
-          setNotification({ type: 'success', message: `Analyzed ${repo.full_name}...`, tips: `Processed ${analyzedProjects.length} of ${repos.length} public repositories.` });
         } catch (analyzeError) {
           console.error(`Error analyzing ${repo.full_name}:`, analyzeError);
-          // Add a basic entry even if AI analysis fails
           analyzedProjects.push({
             id: repo.full_name,
             repoName: repo.full_name,
@@ -458,7 +534,7 @@ const App = () => {
             language: repo.language,
             lastActivity: repo.pushed_at,
             completenessScore: 0, workingStatus: 'unknown', advancedTechUsed: [],
-            activityLevel: 'unknown', majorProject: false, domainSpecific: [],
+            activityLevel: 'low', majorProject: false, domainSpecific: [],
             aiSummary: 'AI analysis failed for this project.',
             suggestedBulletPoints: [],
           });
@@ -466,17 +542,20 @@ const App = () => {
       }
 
       // Update user memory
-      const newMemory = { ...userMemory, githubProjects: analyzedProjects };
+      const newMemory = { ...userMemory, githubProjects: analyzedProjects, lastUpdated: Date.now() };
+      console.log('Saving GitHub projects to memory:', analyzedProjects.length, 'projects');
       await handleUpdateMemory(newMemory);
-      setNotification({ type: 'success', message: `Successfully fetched and analyzed ${analyzedProjects.length} GitHub projects!` });
+      console.log('Memory updated successfully');
+      setNotification({ type: 'success', message: `Successfully fetched and analyzed ${analyzedProjects.length} GitHub projects! Check "View Memory Details" to see them.` });
 
     } catch (error: any) {
       console.error("Error fetching/analyzing GitHub projects:", error);
       setNotification({ type: 'error', message: `Failed to process GitHub projects: ${error.message}` });
     } finally {
       setIsAnalyzingGitHubProjects(false);
+      setGithubAnalysisProgress({ current: 0, total: 0, repoName: '' });
     }
-  }, [user, githubAccessToken, userMemory, hasApiKey, setIsProfileModalOpen, handleUpdateMemory, setNotification]);
+  }, [user, githubAccessToken, userMemory, handleUpdateMemory]);
 
   // --- Handlers (continued) ---
 
@@ -492,41 +571,98 @@ const App = () => {
     setMobileTab('editor');
   };
 
+  const handleJobRoleSelect = async (role: {id: string, title: string, category: string, description: string} | null) => {
+    setSelectedJobRole(role);
+
+    // Score projects when role is selected
+    if (role && userMemory.githubProjects && userMemory.githubProjects.length > 0) {
+      setIsScoringProjects(true);
+      try {
+        const scored = await scoreMultipleProjectsRelevance(userMemory.githubProjects, role.title);
+        setScoredProjects(scored);
+        // Auto-select top 3 most relevant projects
+        const topProjects = scored.slice(0, 3).map(p => p.id);
+        setSelectedProjectIds(topProjects);
+      } catch (error) {
+        console.error('Error scoring projects:', error);
+        setScoredProjects(userMemory.githubProjects);
+      } finally {
+        setIsScoringProjects(false);
+      }
+    } else {
+      setScoredProjects(userMemory.githubProjects || []);
+      setSelectedProjectIds([]);
+    }
+  };
+
+  const handleToggleProject = (projectId: string) => {
+    setSelectedProjectIds(prev =>
+      prev.includes(projectId)
+        ? prev.filter(id => id !== projectId)
+        : [...prev, projectId]
+    );
+  };
+
   const handleCreateFromMemory = async () => {
     if (!hasApiKey()) {
        setNotification({ type: 'error', message: 'API Key required for AI generation.' });
        setIsProfileModalOpen(true);
        return;
     }
+    if (!selectedJobRole) {
+       setNotification({ type: 'error', message: 'Please select a job role first.' });
+       return;
+    }
     if (isGeneratingFromMemory) return;
     setIsGeneratingFromMemory(true);
     try {
-      // The generateResumeFromMemory function now includes built-in AI Research
-      const newResume = await generateResumeFromMemory(userMemory, jobDescription);
-      
-      let title = "Professional Resume";
+      // Filter memory to include only selected projects
+      const selectedProjects = userMemory.githubProjects
+        ?.filter(p => selectedProjectIds.includes(p.id)) || [];
+
+      const filteredMemory: UserProfileMemory = {
+        ...userMemory,
+        projects: [
+          ...userMemory.projects,
+          ...selectedProjects.map(p => ({
+            id: p.id,
+            name: p.repoName,
+            description: p.aiSummary,
+            link: p.htmlUrl,
+            repoLink: p.htmlUrl
+          }))
+        ]
+      };
+
+      const combinedJobDescription = selectedJobRole ? `${selectedJobRole.title}: ${selectedJobRole.description}\n\n${jobDescription}`.trim() : jobDescription;
+      const newResume = await generateResumeFromMemory(filteredMemory, combinedJobDescription);
+
+      let title = selectedJobRole ? `${selectedJobRole.title} Resume` : "Professional Resume";
       if (newResume.title && !['Untitled Resume', 'Tailored Resume', 'Professional Resume'].includes(newResume.title)) {
         title = newResume.title;
-      } 
+      }
       else if (newResume.experience.length > 0) {
         title = newResume.experience[0].role;
       }
-      
+
       newResume.title = title;
-      
+
       if (!newResume.personalInfo.fullName && user?.displayName) {
         newResume.personalInfo.fullName = user.displayName;
       }
-      
+
       setCurrentResume(newResume);
       if (user && !user.isGuest) await saveResumeToDB(user.uid, newResume);
       setResumes(prev => [newResume, ...prev]);
-      
+
       setView('editor');
       setMobileTab('editor');
       setIsMemoryModalOpen(false);
+      setSelectedJobRole(null);
       setJobDescription('');
-      setNotification({ type: 'success', message: 'Resume generated from memory with AI insights!' });
+      setSelectedProjectIds([]);
+      setScoredProjects([]);
+      setNotification({ type: 'success', message: `Resume generated for ${selectedJobRole.title} role with ${selectedProjectIds.length} projects!` });
     } catch (error) {
       setNotification({ type: 'error', message: 'Failed to generate resume. Please try again.' });
     } finally {
@@ -707,22 +843,23 @@ const App = () => {
           <h1 className="text-3xl font-bold text-white mb-2">AI Resume Architect</h1>
           <p className="text-slate-400 mb-8">Build your career memory, tailor resumes instantly, and outsmart ATS algorithms with AI.</p>
           {!isConfigured ? (
-             <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-4 mb-6 text-left animate-pulse">
-               <div className="flex items-center gap-2 text-red-400 font-bold mb-1"><AlertTriangle className="w-5 h-5" /> Config Missing</div>
-               <p className="text-sm text-red-300">Update <code>services/firebase.ts</code> with your project keys.</p>
-             </div>
-          ) : (
-            <div className="space-y-3">
+              <div className="bg-red-900/20 border border-red-900/50 rounded-lg p-4 mb-6 text-left animate-pulse">
+                <div className="flex items-center gap-2 text-red-400 font-bold mb-1"><AlertTriangle className="w-5 h-5" /> Config Missing</div>
+                <p className="text-sm text-red-300">Update <code>services/firebase.ts</code> with your project keys.</p>
+              </div>
+           ) : (
+            <div className="space-y-4">
+              <div className="text-left mb-6">
+                <h3 className="text-lg font-semibold text-white mb-2">Step 1: Choose Authentication</h3>
+                <p className="text-sm text-slate-400">Select how you'd like to access your account</p>
+              </div>
+
               <Button variant="primary" onClick={handleLogin} className="w-full py-3 text-base bg-white hover:bg-gray-100 text-slate-900 font-medium">
-                 Sign In with Google
+                  Sign In with Google
               </Button>
               <Button variant="primary" onClick={handleGitHubLogin} className="w-full py-3 text-base bg-[#333] hover:bg-[#222] text-white font-medium">
-                 <Github className="w-5 h-5 mr-2" fill="currentColor" />
-                 Sign In with GitHub
-              </Button>
-              <Button variant="primary" onClick={handleLinkedInLogin} className="w-full py-3 text-base bg-[#0077b5] hover:bg-[#005e93] font-medium">
-                 <Linkedin className="w-5 h-5 mr-2" fill="currentColor" />
-                 Sign In with LinkedIn
+                  <Github className="w-5 h-5 mr-2" fill="currentColor" />
+                  Sign In with GitHub
               </Button>
               <div className="relative flex py-2 items-center my-2">
                 <div className="flex-grow border-t border-slate-800"></div>
@@ -730,6 +867,16 @@ const App = () => {
                 <div className="flex-grow border-t border-slate-800"></div>
               </div>
               <Button variant="secondary" onClick={handleGuestLogin} className="w-full py-2 text-sm text-slate-400 hover:text-white">Continue as Guest (Local)</Button>
+
+              <div className="mt-6 p-4 bg-indigo-900/10 border border-indigo-500/20 rounded-lg text-left">
+                <div className="flex items-center gap-2 text-indigo-400 font-bold mb-2">
+                  <Key className="w-4 h-4" />
+                  Next Steps
+                </div>
+                <p className="text-sm text-indigo-300 leading-relaxed">
+                  After signing in, you'll need to add your Gemini API key and optionally connect GitHub to analyze your projects.
+                </p>
+              </div>
             </div>
           )}
           {notification && (
@@ -805,6 +952,10 @@ const App = () => {
               onSignOut={handleSignOut}
               onUpdateMemory={handleUpdateMemory}
               onUseProject={handleUseProjectInResume}
+              onConnectGitHub={handleConnectGitHub}
+              onAnalyzeGitHub={handleFetchAndAnalyzeGitHubProjects}
+              isAnalyzingGitHub={isAnalyzingGitHubProjects}
+              githubAnalysisProgress={githubAnalysisProgress}
             />
           </div>
         ) : (
@@ -922,23 +1073,60 @@ const App = () => {
         </div>
       </Modal>
 
-        <Modal isOpen={isMemoryModalOpen} onClose={() => setIsMemoryModalOpen(false)} title="Generate Resume from Memory">
-          <div className="space-y-4">
-             <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 text-sm text-slate-300 flex gap-3">
-               <HelpCircle className="w-5 h-5 text-indigo-400 flex-shrink-0" />
-               <p>AI will build a new resume using <strong className="text-white">{userMemory.experiences.length} experiences</strong>, <strong className="text-white">{userMemory.educations.length} education</strong>, <strong className="text-white">{userMemory.projects.length} projects</strong>, and <strong className="text-white">{userMemory.leadershipActivities.length} activities</strong>.</p>
-             </div>
-             <div className="bg-indigo-900/20 p-3 rounded border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-2">
-               <Sparkles className="w-3 h-3" />
-               AI Research enabled: We'll scan for 2025 industry trends relevant to your role.
-             </div>
-             <TextArea label="Target Job Description (Optional)" value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} className="h-32" placeholder="Paste job details..." />
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setIsMemoryModalOpen(false)}>Cancel</Button>
-                <Button variant="ai" onClick={handleCreateFromMemory} loading={isGeneratingFromMemory}><Wand2 className="w-4 h-4 mr-2" /> Generate</Button>
+         <Modal isOpen={isMemoryModalOpen} onClose={() => {
+           setIsMemoryModalOpen(false);
+           setSelectedJobRole(null);
+           setJobDescription('');
+           setSelectedProjectIds([]);
+           setScoredProjects([]);
+         }} title="Generate Resume from Memory">
+           <div className="space-y-6">
+              <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 text-sm text-slate-300 flex gap-3">
+                <HelpCircle className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+                <p>AI will build a new resume using <strong className="text-white">{userMemory.experiences.length} experiences</strong>, <strong className="text-white">{userMemory.educations.length} education</strong>, <strong className="text-white">{userMemory.projects.length} projects</strong>, and <strong className="text-white">{userMemory.leadershipActivities.length} activities</strong>.</p>
               </div>
-          </div>
-        </Modal>
+
+              <JobRoleSelector
+                selectedRole={selectedJobRole}
+                onRoleSelect={handleJobRoleSelect}
+                onCustomRole={(title) => handleJobRoleSelect({ id: 'custom', title, category: 'Custom', description: 'Custom job role' })}
+              />
+
+              {selectedJobRole && (scoredProjects.length > 0 || userMemory.githubProjects?.length > 0) && (
+                <div className="border-t border-slate-800 pt-6">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <Github className="w-5 h-5 text-indigo-400" />
+                    Select Relevant Projects
+                  </h4>
+                  <ProjectSelector
+                    projects={scoredProjects.length > 0 ? scoredProjects : userMemory.githubProjects || []}
+                    selectedProjects={selectedProjectIds}
+                    onToggleProject={handleToggleProject}
+                    jobRole={selectedJobRole?.title}
+                    loading={isScoringProjects}
+                  />
+                </div>
+              )}
+
+              <div className="bg-indigo-900/20 p-3 rounded border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-2">
+                <Sparkles className="w-3 h-3" />
+                AI Research enabled: We'll scan for 2025 industry trends relevant to your role.
+              </div>
+
+              <TextArea label="Target Job Description (Optional)" value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} className="h-32" placeholder="Paste job details..." />
+
+               <div className="flex justify-end gap-2">
+                 <Button variant="secondary" onClick={() => {
+                   setIsMemoryModalOpen(false);
+                   setSelectedJobRole(null);
+                   setJobDescription('');
+                   setSelectedProjectIds([]);
+                   setScoredProjects([]);
+                 }}>Cancel</Button>
+                 <Button variant="ai" onClick={handleCreateFromMemory} loading={isGeneratingFromMemory} disabled={!selectedJobRole}><Wand2 className="w-4 h-4 mr-2" /> Generate Resume</Button>
+               </div>
+           </div>
+         </Modal>
 
         {/* Profile Settings Modal */}
         <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="Account Settings">

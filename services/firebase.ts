@@ -2,9 +2,10 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import type { FirebaseApp } from 'firebase/app';
 // Fix: Import `signOut` as `fbSignOut` to match existing usage in this file.
-import { 
-  getAuth, GoogleAuthProvider, GithubAuthProvider, OAuthProvider, 
-  onAuthStateChanged, signInWithPopup, signOut as fbSignOut
+import {
+  getAuth, GoogleAuthProvider, GithubAuthProvider, OAuthProvider,
+  onAuthStateChanged, signInWithPopup, signOut as fbSignOut,
+  fetchSignInMethodsForEmail, EmailAuthProvider, linkWithCredential, linkWithPopup
 } from 'firebase/auth';
 import type { User as FBUser, Auth, AuthCredential } from 'firebase/auth';
 import { 
@@ -64,12 +65,22 @@ export const signInWithGoogle = async () => {
   }
 };
 
-export const signInWithGithub = async () => {
+export const signInWithGithub = async (): Promise<{ user: FBUser; accessToken?: string }> => {
   if (!authInstance) throw new Error("Firebase not configured");
   const provider = new GithubAuthProvider();
+  // Request only read permissions for public repos
+  provider.addScope('read:user');
+  provider.addScope('user:email');
+  provider.addScope('repo'); // This allows reading public and private repos
+
   try {
     const result = await signInWithPopup(authInstance, provider);
-    return result.user;
+    const credential = GithubAuthProvider.credentialFromResult(result);
+    const accessToken = credential?.accessToken;
+
+    console.log('GitHub sign-in successful, access token:', accessToken ? 'received' : 'not received');
+
+    return { user: result.user, accessToken };
   } catch (error) {
     console.error("GitHub Auth Error:", error);
     throw error;
@@ -97,8 +108,13 @@ export const signInWithLinkedIn = async () => {
 const getProviderObj = (providerName: 'google' | 'github' | 'linkedin') => {
   switch (providerName) {
     case 'google': return new GoogleAuthProvider();
-    case 'github': return new GithubAuthProvider();
-    case 'linkedin': 
+    case 'github':
+      const githubProvider = new GithubAuthProvider();
+      githubProvider.addScope('read:user');
+      githubProvider.addScope('user:email');
+      githubProvider.addScope('repo');
+      return githubProvider;
+    case 'linkedin':
       const p = new OAuthProvider('oidc.linkedin');
       p.addScope('openid');
       p.addScope('profile');
@@ -110,10 +126,25 @@ const getProviderObj = (providerName: 'google' | 'github' | 'linkedin') => {
 
 export const linkProvider = async (user: User, providerName: 'google' | 'github' | 'linkedin'): Promise<{ user: User, accessToken?: string }> => {
   if (!authInstance) throw new Error("Firebase not configured");
+
+  // Check if already linked
+  const isAlreadyLinked = user.providerData?.some((p: any) => {
+    if (providerName === 'google') return p.providerId === 'google.com';
+    if (providerName === 'github') return p.providerId === 'github.com';
+    if (providerName === 'linkedin') return p.providerId === 'oidc.linkedin';
+    return false;
+  });
+
+  if (isAlreadyLinked) {
+    throw new Error(`${providerName} account is already linked to this user.`);
+  }
+
   const provider = getProviderObj(providerName);
+
   try {
-    const result = await signInWithPopup(authInstance, provider);
-    
+    // Try to link directly with the current user using linkWithPopup from auth module
+    const result = await linkWithPopup(user, provider);
+
     let githubAccessToken: string | undefined;
     if (providerName === 'github') {
       const credential = GithubAuthProvider.credentialFromResult(result);
@@ -122,11 +153,17 @@ export const linkProvider = async (user: User, providerName: 'google' | 'github'
       }
     }
 
-    if (result.user.uid !== user.uid) {
-      // This scenario is handled by Firebase Auth, result.user will be the newly linked user
-    }
     return { user: result.user, accessToken: githubAccessToken };
-  } catch (error) {
+
+  } catch (error: any) {
+    if (error.code === 'auth/credential-already-in-use') {
+      throw new Error('This account is already linked to another user.');
+    }
+
+    if (error.code === 'auth/account-exists-with-different-credential') {
+      throw new Error(`This ${providerName} account is already used with a different login method. Please sign in with that method first.`);
+    }
+
     console.error(`Link ${providerName} Error:`, error);
     throw error;
   }

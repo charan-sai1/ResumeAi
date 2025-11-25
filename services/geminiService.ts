@@ -122,7 +122,7 @@ export const sanitizeMemory = (data: any): UserProfileMemory => {
   ];
 
   return {
-    lastUpdated: Date.now(),
+    lastUpdated: data.lastUpdated || Date.now(),
     personalInfo: {
       fullName: data.personalInfo?.fullName || '',
       email: data.personalInfo?.email || '',
@@ -143,7 +143,8 @@ export const sanitizeMemory = (data: any): UserProfileMemory => {
       question: typeof q.question === 'string' ? q.question : 'Details needed.',
       options: Array.isArray(q.options) ? q.options.map(String) : [],
       dateAdded: q.dateAdded || Date.now()
-    }))
+    })),
+    githubProjects: ensureArray(data.githubProjects) // Keep githubProjects as-is
   };
 };
 
@@ -154,13 +155,15 @@ export const sanitizeMemory = (data: any): UserProfileMemory => {
 const PROMPT_TEMPLATES = {
 
   enhance: (content: string, context: string) => `
-  ROLE: You are a world-class Executive Resume Strategist and Fortune-500 Career Copywriter.
-  OBJECTIVE: Transform the input into an elite, high-impact, recruiter-optimized resume section.
+  ROLE: You are an elite HR Director at a Fortune 100 company with 20+ years of experience in executive resume optimization and ATS systems.
 
-  CORE PRINCIPLES:
-  1. Zero fluff. Every word must add measurable value.
-  2. Recruiter scanning time: < 6 seconds.
-  3. ATS + Human Optimized.
+  OBJECTIVE: Transform the input into maximum-impact, quantified achievements that pass 99% of ATS systems and impress hiring managers in <6 seconds.
+
+  CORE PRINCIPLES (MANDATORY):
+  1. QUANTIFY EVERYTHING - Every achievement must have numbers (%, $, time saved, users impacted, efficiency gains)
+  2. DEDUPLICATE RUTHLESSLY - Remove all redundant information, merge similar points
+  3. THINK LIKE AN HR EXECUTIVE - Focus on business impact, not technical tasks
+  4. MAXIMUM BULLET POINTS - Generate 4-6 strong bullets per experience (not 2-3)
 
   TASK: Intensify and enhance the following content.
   Context: ${context}
@@ -168,19 +171,26 @@ const PROMPT_TEMPLATES = {
   STRICT FORMAT RULES:
   - Each bullet MUST:
     • Start with "* "
-    • Begin with a Power Verb (Led, Engineered, Accelerated, Optimized, Delivered, Orchestrated, Scaled, Built, Automated, Reduced, Increased, Revamped, Pioneered, Streamlined)
-    • Follow this structure:
-      Action + What + How + Impact
+    • Begin with a Power Verb (Led, Engineered, Accelerated, Optimized, Delivered, Orchestrated, Scaled, Built, Automated, Reduced, Increased, Revamped, Pioneered, Streamlined, Spearheaded, Architected, Transformed)
+    • Follow: [Action Verb] + [What] + [How/Method] + [Quantified Impact]
+    • Include AT LEAST 2 metrics per bullet
 
-  IMPACT RULES (MANDATORY):
-  - Include quantified metrics in **bold** (%, $, time, users, performance, scale, revenue, efficiency).
-  - Use realistic, professional business metrics.
-  - If none exist, intelligently infer based on context.
+  QUANTIFICATION RULES (CRITICAL):
+  - Always include: percentages (%), dollar amounts ($), time metrics (hours/days saved), scale (users/requests/records)
+  - Examples: "**45% faster**", "**$2M revenue**", "**10,000+ users**", "**99.9% uptime**"
+  - If exact numbers unknown, use reasonable professional estimates based on context
+  - EVERY bullet must have measurable impact
 
-  READABILITY RULES:
-  - 1-line bullets only
-  - Ultra concise, executive tone
-  - No passive voice
+  SENTENCE RULES:
+  - Maximum 1.5 lines per bullet
+  - Ultra-concise, executive tone
+  - No passive voice, no fluff words
+  - Start strong, end with impact
+
+  DEDUPLICATION:
+  - Merge overlapping achievements
+  - Remove generic responsibilities
+  - Consolidate similar technologies/tools
 
   Input Content:
   "${content}"
@@ -188,7 +198,7 @@ const PROMPT_TEMPLATES = {
   OUTPUT FORMAT (JSON ONLY):
   {
     "refinedText": "...",
-    "impactScore": number (0-100 based on strength + clarity + metrics),
+    "impactScore": number (0-100 based on quantification + clarity + business value),
     "changes": ["Specific change 1", "Specific change 2", ...]
   }
   `,
@@ -245,7 +255,7 @@ const PROMPT_TEMPLATES = {
 
 
   analyzeATS: (resume: Resume) => `
-  ROLE: Advanced ATS Analyzer + Hiring Manager Simulation System
+  ROLE: You are a Senior ATS System Engineer and HR Technology Consultant with expertise in Workday, Greenhouse, Lever, and Taleo ATS platforms.
 
   TARGET ROLE:
   ${resume.title}
@@ -253,23 +263,56 @@ const PROMPT_TEMPLATES = {
   RESUME DATA:
   ${JSON.stringify(resume)}
 
-  TASK:
-  Perform a deep ATS scan and strategic evaluation.
+  OBJECTIVE: Perform STRICT multi-pattern ATS analysis with 99% accuracy requirement. Be HARSH - only scores above 85 should pass modern ATS systems.
 
-  ANALYZE FOR:
-  - Keyword density
-  - Role alignment
-  - Skill relevance
-  - Impact clarity
-  - Formatting structure
+  CRITICAL ANALYSIS PATTERNS (ALL REQUIRED):
+
+  1. KEYWORD DENSITY ANALYSIS (Weight: 30%)
+     - Check for role-specific keywords (minimum 15-20 required)
+     - Technical skills must appear 2-3 times naturally
+     - Industry buzzwords and certifications
+     - Scan: job title variations, action verbs, tools/technologies
+
+  2. QUANTIFICATION CHECK (Weight: 25%)
+     - EVERY experience bullet must have metrics
+     - Look for: %, $, numbers, time savings, scale indicators
+     - Missing metrics = automatic 20-point deduction
+
+  3. FORMATTING COMPLIANCE (Weight: 15%)
+     - Bullet consistency (all start with *)
+     - No special characters that break parsing
+     - Clean section headers
+     - Proper date formats
+
+  4. IMPACT CLARITY (Weight: 20%)
+     - Each bullet shows clear business value
+     - No generic responsibilities
+     - Action verb + method + result structure
+     - Accomplishments > Duties
+
+  5. ROLE ALIGNMENT (Weight: 10%)
+     - Skills match job requirements
+     - Experience progression makes sense
+     - No significant gaps or red flags
+
+  STRICT SCORING RUBRIC:
+  - 90-100: Exceptional - Will pass 99% of ATS systems
+  - 80-89: Strong - Likely to pass, minor improvements needed
+  - 70-79: Moderate - Significant gaps, 50% pass rate
+  - 60-69: Weak - Major issues, unlikely to pass
+  - Below 60: Critical - Will be rejected by most ATS
+
+  WEAKNESSES MUST BE SPECIFIC:
+  ❌ Bad: "Needs more keywords"
+  ✅ Good: "Missing key technologies: React, Node.js, AWS (found in 95% of similar roles)"
 
   RETURN JSON ONLY:
   {
-    "score": number (0-100),
-    "strengths": ["..."],
-    "weaknesses": ["..."],
-    "keywords_missing": ["..."],
-    "recommendations": ["Actionable improvement suggestions"]
+    "score": number (0-100, be STRICT),
+    "strengths": ["Specific strength with evidence"],
+    "weaknesses": ["Actionable weakness with exact fix needed"],
+    "keywords_missing": ["Critical keyword 1", "Critical keyword 2", ...],
+    "recommendations": ["Priority 1: Fix X by doing Y", "Priority 2: ..."]
   }
   `,
 
@@ -583,6 +626,60 @@ export const generateResumeFromMemory = async (memory: UserProfileMemory, jobDes
 };
 
 import { GitHubRepo, AnalyzedProject } from '../types';
+
+export const scoreProjectRelevance = async (project: AnalyzedProject, jobRole: string): Promise<number> => {
+  if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
+  const ai = getAIClient();
+
+  try {
+    const prompt = `
+      Score how relevant this project is for a ${jobRole} position on a scale of 0-100.
+
+      Project Details:
+      - Name: ${project.repoName}
+      - Description: ${project.description}
+      - Technologies: ${project.advancedTechUsed.join(', ')}
+      - Domains: ${project.domainSpecific.join(', ')}
+      - Summary: ${project.aiSummary}
+
+      Consider:
+      - Technical skills match
+      - Domain relevance
+      - Project complexity and impact
+      - Industry alignment
+
+      Return only a JSON object with a single property "relevanceScore" (number 0-100).
+    `;
+
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+
+    const result = JSON.parse(response.text || '{}');
+    return Math.min(100, Math.max(0, result.relevanceScore || 0));
+  } catch (error) {
+    console.error("Error scoring project relevance:", error);
+    return 50; // Default medium relevance on error
+  }
+};
+
+export const scoreMultipleProjectsRelevance = async (
+  projects: AnalyzedProject[],
+  jobRole: string
+): Promise<AnalyzedProject[]> => {
+  if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
+
+  const scoredProjects = await Promise.all(
+    projects.map(async (project) => {
+      const relevanceScore = await scoreProjectRelevance(project, jobRole);
+      return { ...project, relevanceScore };
+    })
+  );
+
+  return scoredProjects.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+};
 
 export const analyzeGitHubRepo = async (repoData: GitHubRepo, readmeContent: string | null): Promise<AnalyzedProject> => {
   if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");

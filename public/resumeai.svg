@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#a855f7;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background Circle -->
+  <circle cx="50" cy="50" r="48" fill="url(#grad)"/>
+  <!-- Document Icon -->
+  <rect x="30" y="25" width="40" height="50" rx="2" fill="white"/>
+  <line x1="38" y1="35" x2="62" y2="35" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <line x1="38" y1="45" x2="62" y2="45" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <line x1="38" y1="55" x2="62" y2="55" stroke="#a855f7" stroke-width="2" stroke-linecap="round"/>
+  <line x1="38" y1="65" x2="55" y2="65" stroke="#a855f7" stroke-width="2" stroke-linecap="round"/>
+  <!-- AI Spark -->
+  <circle cx="68" cy="70" r="12" fill="#fbbf24"/>
+  <path d="M 68 64 L 68 76 M 62 70 L 74 70 M 64 65 L 72 75 M 72 65 L 64 75" stroke="white" stroke-width="2" stroke-linecap="round"/>
+</svg>
