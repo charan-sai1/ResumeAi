@@ -2,6 +2,175 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Resume, ATSAnalysis, UserProfileMemory, QnAItem, LeadershipActivity, GroundingChunk } from "../types";
 
+// Rate limiting and caching utilities
+class RateLimiter {
+  private requests: number[] = [];
+  private readonly maxRequests: number;
+  private readonly windowMs: number;
+
+  constructor(maxRequests: number = 10, windowMs: number = 60000) { // 10 requests per minute
+    this.maxRequests = maxRequests;
+    this.windowMs = windowMs;
+  }
+
+  async waitForSlot(): Promise<void> {
+    const now = Date.now();
+
+    // Remove old requests outside the window
+    this.requests = this.requests.filter(time => now - time < this.windowMs);
+
+    if (this.requests.length >= this.maxRequests) {
+      // Calculate wait time until oldest request expires
+      const oldestRequest = Math.min(...this.requests);
+      const waitTime = this.windowMs - (now - oldestRequest);
+
+      if (waitTime > 0) {
+        console.log(`Rate limit reached. Waiting ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return this.waitForSlot(); // Recursively check again
+      }
+    }
+
+    this.requests.push(now);
+  }
+
+  recordRequest(): void {
+    this.requests.push(Date.now());
+  }
+}
+
+// Global rate limiter instance
+const rateLimiter = new RateLimiter();
+
+// Response cache
+const responseCache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+
+function getCacheKey(operation: string, params: any): string {
+  return `${operation}:${JSON.stringify(params)}`;
+}
+
+function getCachedResponse(key: string): any | null {
+  const cached = responseCache.get(key);
+  if (cached && Date.now() - cached.timestamp < cached.ttl) {
+    return cached.data;
+  }
+  responseCache.delete(key);
+  return null;
+}
+
+function setCachedResponse(key: string, data: any, ttl: number = 300000): void { // 5 minutes default
+  responseCache.set(key, { data, timestamp: Date.now(), ttl });
+}
+
+// Enhanced API call with rate limiting and caching
+async function makeAPICall<T>(
+  operation: string,
+  params: any,
+  apiCall: () => Promise<T>,
+  cacheTTL: number = 300000,
+  useCache: boolean = true
+): Promise<T> {
+  const cacheKey = getCacheKey(operation, params);
+
+  // Check cache first
+  if (useCache) {
+    const cached = getCachedResponse(cacheKey);
+    if (cached !== null) {
+      console.log(`Using cached response for ${operation}`);
+      return cached;
+    }
+  }
+
+  // Wait for rate limit slot
+  await rateLimiter.waitForSlot();
+
+  try {
+    console.log(`Making API call: ${operation}`);
+    const result = await apiCall();
+    rateLimiter.recordRequest();
+
+    // Cache successful responses
+    if (useCache) {
+      setCachedResponse(cacheKey, result, cacheTTL);
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error(`API call failed for ${operation}:`, error);
+
+    // Handle rate limiting with exponential backoff
+    if (error?.status === 429 || error?.code === 429) {
+      const retryAfter = error?.headers?.['retry-after'] ||
+                         error?.details?.[0]?.retryDelay ||
+                         '60s';
+
+      let waitTime = 60000; // Default 60 seconds
+      if (typeof retryAfter === 'string') {
+        const match = retryAfter.match(/(\d+)/);
+        if (match) {
+          waitTime = parseInt(match[1]) * 1000;
+        }
+      }
+
+      console.log(`Rate limited. Waiting ${waitTime}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+
+      // Retry once with fresh rate limit check
+      return makeAPICall(operation, params, apiCall, cacheTTL, useCache);
+    }
+
+    throw error;
+  }
+}
+
+// User-friendly error handling for API issues
+export function handleAPIError(error: any, operation: string): { type: 'error' | 'warning'; message: string; tips?: string[] } {
+  if (error?.status === 429 || error?.code === 429) {
+    return {
+      type: 'warning',
+      message: 'API rate limit reached. Using cached results where available.',
+      tips: [
+        'Free tier allows 10 requests per minute',
+        'Consider upgrading to a paid plan for higher limits',
+        'Results are cached to reduce future API calls'
+      ]
+    };
+  }
+
+  if (error?.status === 403 || error?.code === 403) {
+    return {
+      type: 'error',
+      message: 'API access denied. Please check your API key.',
+      tips: [
+        'Verify your Gemini API key is correct',
+        'Ensure your API key has the necessary permissions',
+        'Check your billing status with Google AI Studio'
+      ]
+    };
+  }
+
+  if (error?.status >= 500) {
+    return {
+      type: 'warning',
+      message: 'AI service temporarily unavailable. Using fallback methods.',
+      tips: [
+        'Try again in a few minutes',
+        'Some features may work with cached data'
+      ]
+    };
+  }
+
+  return {
+    type: 'error',
+    message: `Failed to ${operation}. Please try again.`,
+    tips: [
+      'Check your internet connection',
+      'Try refreshing the page',
+      'Contact support if the issue persists'
+    ]
+  };
+}
+
 // --- Configuration ---
 // REMOVED PROCESS.ENV default key to enforce BYOK
 let userCustomApiKey: string | null = null;
@@ -706,12 +875,25 @@ export const scoreMultipleProjectsRelevance = async (
 ): Promise<AnalyzedProject[]> => {
   if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
 
-  const scoredProjects = await Promise.all(
-    projects.map(async (project) => {
-      const relevanceScore = await scoreProjectRelevance(project, jobRole);
-      return { ...project, relevanceScore };
-    })
-  );
+  // Process projects sequentially to respect rate limits
+  const scoredProjects: AnalyzedProject[] = [];
+
+  for (const project of projects) {
+    try {
+      const relevanceScore = await makeAPICall(
+        'scoreProjectRelevance',
+        { project, jobRole },
+        async () => scoreProjectRelevance(project, jobRole),
+        1800000, // Cache for 30 minutes
+        true
+      );
+      scoredProjects.push({ ...project, relevanceScore });
+    } catch (error) {
+      console.error(`Failed to score project ${project.repoName}:`, error);
+      // Keep original project if scoring fails
+      scoredProjects.push({ ...project, relevanceScore: 50 });
+    }
+  }
 
   return scoredProjects.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 };
@@ -918,50 +1100,56 @@ export const analyzeSkillGaps = async (
     };
   }
 
-  const ai = getAIClient();
+  return makeAPICall(
+    'analyzeSkillGaps',
+    { resume: userResume, jobDescription },
+    async () => {
+      const ai = getAIClient();
 
-  const prompt = `
-  Analyze the skill gaps between this candidate's resume and the job requirements.
-  Provide ethical, actionable recommendations to address gaps legitimately.
+      const prompt = `
+      Analyze the skill gaps between this candidate's resume and the job requirements.
+      Provide ethical, actionable recommendations to address gaps legitimately.
 
-  JOB DESCRIPTION:
-  ${jobDescription}
+      JOB DESCRIPTION:
+      ${jobDescription}
 
-  CANDIDATE RESUME:
-  ${JSON.stringify(userResume)}
+      CANDIDATE RESUME:
+      ${JSON.stringify(userResume)}
 
-  Return a JSON analysis with:
-  - missingSkills: Array of skills clearly missing from resume
-  - transferableSkills: Array of objects with {userSkill, targetSkill, explanation} for skills that can transfer
-  - recommendedActions: Specific, ethical steps to acquire missing skills (courses, projects, certifications)
-  - confidence: Number 0-100 indicating how well the candidate matches overall
+      Return a JSON analysis with:
+      - missingSkills: Array of skills clearly missing from resume
+      - transferableSkills: Array of objects with {userSkill, targetSkill, explanation} for skills that can transfer
+      - recommendedActions: Specific, ethical steps to acquire missing skills (courses, projects, certifications)
+      - confidence: Number 0-100 indicating how well the candidate matches overall
 
-  Focus on LEGITIMATE skill development and experience reframing, not manipulation.
-  `;
+      Focus on LEGITIMATE skill development and experience reframing, not manipulation.
+      `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: MODEL_FAST,
-      contents: prompt,
-      config: { responseMimeType: "application/json" }
-    });
+      const response = await ai.models.generateContent({
+        model: MODEL_FAST,
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+      });
 
-    const result = JSON.parse(response.text || '{}');
-    return {
-      missingSkills: result.missingSkills || [],
-      transferableSkills: result.transferableSkills || [],
-      recommendedActions: result.recommendedActions || [],
-      confidence: Math.min(100, Math.max(0, result.confidence || 0))
-    };
-  } catch (error) {
+      const result = JSON.parse(response.text || '{}');
+      return {
+        missingSkills: result.missingSkills || [],
+        transferableSkills: result.transferableSkills || [],
+        recommendedActions: result.recommendedActions || [],
+        confidence: Math.min(100, Math.max(0, result.confidence || 0))
+      };
+    },
+    600000, // Cache for 10 minutes
+    true
+  ).catch(error => {
     console.error("Skill gap analysis error:", error);
     return {
       missingSkills: [],
       transferableSkills: [],
-      recommendedActions: ["Unable to analyze skills - check API key"],
+      recommendedActions: ["Unable to analyze skills - check API key or rate limit"],
       confidence: 0
     };
-  }
+  });
 };
 
 export const enhanceExperienceForATS = async (
@@ -970,39 +1158,45 @@ export const enhanceExperienceForATS = async (
 ): Promise<string> => {
   if (!hasApiKey()) return experience;
 
-  const ai = getAIClient();
+  return makeAPICall(
+    'enhanceExperienceForATS',
+    { experience, targetSkills },
+    async () => {
+      const ai = getAIClient();
 
-  const prompt = `
-  Enhance this work experience description to better highlight transferable skills and relevant competencies.
-  Make it more ATS-friendly while remaining completely truthful and professional.
+      const prompt = `
+      Enhance this work experience description to better highlight transferable skills and relevant competencies.
+      Make it more ATS-friendly while remaining completely truthful and professional.
 
-  ORIGINAL EXPERIENCE:
-  ${experience}
+      ORIGINAL EXPERIENCE:
+      ${experience}
 
-  TARGET SKILLS TO EMPHASIZE:
-  ${targetSkills.join(', ')}
+      TARGET SKILLS TO EMPHASIZE:
+      ${targetSkills.join(', ')}
 
-  REQUIREMENTS:
-  - Keep all information 100% truthful
-  - Use industry-standard terminology
-  - Highlight quantifiable achievements
-  - Maintain professional tone
-  - Make it more searchable for ATS systems
+      REQUIREMENTS:
+      - Keep all information 100% truthful
+      - Use industry-standard terminology
+      - Highlight quantifiable achievements
+      - Maintain professional tone
+      - Make it more searchable for ATS systems
 
-  Return only the enhanced experience description, no explanations.
-  `;
+      Return only the enhanced experience description, no explanations.
+      `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: MODEL_FAST,
-      contents: prompt
-    });
+      const response = await ai.models.generateContent({
+        model: MODEL_FAST,
+        contents: prompt
+      });
 
-    return response.text?.trim() || experience;
-  } catch (error) {
+      return response.text?.trim() || experience;
+    },
+    1800000, // Cache for 30 minutes (experience enhancements are more stable)
+    true
+  ).catch(error => {
     console.error("Experience enhancement error:", error);
     return experience;
-  }
+  });
 };
 
 export const optimizeResumeKeywords = async (
@@ -1017,44 +1211,50 @@ export const optimizeResumeKeywords = async (
     };
   }
 
-  const ai = getAIClient();
+  return makeAPICall(
+    'optimizeResumeKeywords',
+    { resume, jobDescription },
+    async () => {
+      const ai = getAIClient();
 
-  const prompt = `
-  Analyze this resume against the job description and provide keyword optimization suggestions.
-  Focus on legitimate keyword integration, not stuffing or manipulation.
+      const prompt = `
+      Analyze this resume against the job description and provide keyword optimization suggestions.
+      Focus on legitimate keyword integration, not stuffing or manipulation.
 
-  JOB DESCRIPTION:
-  ${jobDescription}
+      JOB DESCRIPTION:
+      ${jobDescription}
 
-  RESUME:
-  ${JSON.stringify(resume)}
+      RESUME:
+      ${JSON.stringify(resume)}
 
-  Return JSON with:
-  - keywordMatches: Array of keywords from job description that appear in resume
-  - suggestions: Array of specific suggestions for natural keyword integration
-  - Do not modify the resume - just provide analysis and suggestions
-  `;
+      Return JSON with:
+      - keywordMatches: Array of keywords from job description that appear in resume
+      - suggestions: Array of specific suggestions for natural keyword integration
+      - Do not modify the resume - just provide analysis and suggestions
+      `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: MODEL_FAST,
-      contents: prompt,
-      config: { responseMimeType: "application/json" }
-    });
+      const response = await ai.models.generateContent({
+        model: MODEL_FAST,
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+      });
 
-    const result = JSON.parse(response.text || '{}');
+      const result = JSON.parse(response.text || '{}');
 
-    return {
-      optimizedResume: resume, // Keep original for ethical reasons
-      keywordMatches: result.keywordMatches || [],
-      suggestions: result.suggestions || []
-    };
-  } catch (error) {
+      return {
+        optimizedResume: resume, // Keep original for ethical reasons
+        keywordMatches: result.keywordMatches || [],
+        suggestions: result.suggestions || []
+      };
+    },
+    600000, // Cache for 10 minutes
+    true
+  ).catch(error => {
     console.error("Keyword optimization error:", error);
     return {
       optimizedResume: resume,
       keywordMatches: [],
-      suggestions: ["Unable to analyze keywords - check API key"]
+      suggestions: ["Unable to analyze keywords - check API key or rate limit"]
     };
-  }
+  });
 };

@@ -19,9 +19,10 @@ interface Props {
   resume: Resume;
   setResume: (r: Resume) => void;
   memory: UserProfileMemory;
+  onNotification?: (notification: { type: 'success' | 'error' | 'warning'; message: string; tips?: string[] }) => void;
 }
 
-const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory }) => {
+const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, onNotification }) => {
   const [loadingField, setLoadingField] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string>('personal');
   const [newSkill, setNewSkill] = useState('');
@@ -603,7 +604,7 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory })
         />
         {expandedSection === 'ats' && (
           <div className="p-6 bg-slate-950/50">
-            <ATSOptimization resume={resume} onUpdateResume={setResume} />
+            <ATSOptimization resume={resume} onUpdateResume={setResume} onNotification={onNotification} />
           </div>
         )}
       </div>

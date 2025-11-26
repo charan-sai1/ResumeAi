@@ -1046,7 +1046,7 @@ const App = () => {
                {/* Editor Content (Scrollable) */}
                <div className="flex-1 relative overflow-hidden flex flex-col">
                   <Suspense fallback={<div className="flex items-center justify-center p-8"><div className="text-white">Loading editor...</div></div>}>
-                    <ResumeEditor resume={currentResume} setResume={setCurrentResume} memory={userMemory} />
+                    <ResumeEditor resume={currentResume} setResume={setCurrentResume} memory={userMemory} onNotification={setNotification} />
                   </Suspense>
                   
                   {/* ATS Overlay */}
@@ -1148,13 +1148,13 @@ const App = () => {
         </div>
       </Modal>
 
-         <Modal isOpen={isMemoryModalOpen} onClose={() => {
-           setIsMemoryModalOpen(false);
-           setSelectedJobRole(null);
-           setJobDescription('');
-           setSelectedProjectIds([]);
-           setScoredProjects([]);
-         }} title="Generate Resume from Memory">
+          <Modal isOpen={isMemoryModalOpen} onClose={() => {
+            setIsMemoryModalOpen(false);
+            setSelectedJobRole(null);
+            setJobDescription('');
+            setSelectedProjectIds([]);
+            setScoredProjects([]);
+          }} title="Generate Resume from Memory" maxWidth="max-w-4xl">
            <div className="space-y-6">
               <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 text-sm text-slate-300 flex gap-3">
                 <HelpCircle className="w-5 h-5 text-indigo-400 flex-shrink-0" />

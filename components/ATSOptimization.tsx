@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { Card, Button, Input, TextArea } from './UIComponents';
-import { analyzeSkillGaps, enhanceExperienceForATS, optimizeResumeKeywords, SkillGapAnalysis } from '../services/geminiService';
+import { analyzeSkillGaps, enhanceExperienceForATS, optimizeResumeKeywords, SkillGapAnalysis, handleAPIError } from '../services/geminiService';
 import { Resume } from '../types';
-import { BrainCircuit, Target, TrendingUp, BookOpen, CheckCircle, AlertTriangle, Lightbulb } from 'lucide-react';
+import { BrainCircuit, Target, TrendingUp, BookOpen, CheckCircle, AlertTriangle, Lightbulb, AlertCircle } from 'lucide-react';
 
 interface Props {
   resume: Resume;
   onUpdateResume: (resume: Resume) => void;
+  onNotification?: (notification: { type: 'success' | 'error' | 'warning'; message: string; tips?: string[] }) => void;
 }
 
-const ATSOptimization: React.FC<Props> = ({ resume, onUpdateResume }) => {
+const ATSOptimization: React.FC<Props> = ({ resume, onUpdateResume, onNotification }) => {
   const [jobDescription, setJobDescription] = useState('');
   const [skillAnalysis, setSkillAnalysis] = useState<SkillGapAnalysis | null>(null);
   const [keywordAnalysis, setKeywordAnalysis] = useState<{keywordMatches: string[], suggestions: string[]} | null>(null);
@@ -31,8 +32,12 @@ const ATSOptimization: React.FC<Props> = ({ resume, onUpdateResume }) => {
         keywordMatches: keywordResult.keywordMatches,
         suggestions: keywordResult.suggestions
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Analysis error:', error);
+      const errorInfo = handleAPIError(error, 'analyze skills');
+      if (onNotification) {
+        onNotification(errorInfo);
+      }
     } finally {
       setIsAnalyzing(false);
     }
