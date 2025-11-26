@@ -542,6 +542,41 @@ export const parseResumeFromText = async (text: string): Promise<Partial<Resume>
   } catch (error) { return {}; }
 };
 
+export const mergeBatchAnswersIntoMemory = async (
+  currentMemory: UserProfileMemory,
+  qnaPairs: Array<{ question: string; answer: string }>
+): Promise<UserProfileMemory> => {
+  if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
+  const ai = getAIClient();
+
+  // Format all Q&A pairs for batch processing
+  const formattedQnaData = qnaPairs.map((pair, index) =>
+    `Q${index + 1}: ${pair.question}\nA${index + 1}: ${pair.answer}`
+  ).join('\n\n');
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: `Given the following user profile memory:
+${JSON.stringify(currentMemory)}
+
+And the following Q&A responses to merge:
+${formattedQnaData}
+
+Extract and merge all relevant personal information, experiences, education, projects, leadership activities, and skills from the Q&A responses into the user profile memory. Only include information that is explicitly present or clearly inferable. Do not hallucinate.
+
+Return the updated UserProfileMemory in JSON format.`,
+      config: { responseMimeType: "application/json" }
+    });
+
+    const newMemoryData = JSON.parse(response.text || '{}');
+    return { ...currentMemory, ...sanitizeMemory(newMemoryData), lastUpdated: Date.now() };
+  } catch (error) {
+    console.error("Error merging batch Q&A answers:", error);
+    throw new Error("Failed to merge Q&A answers into memory.");
+  }
+};
+
 export const mergeDataIntoMemory = async (currentMemory: UserProfileMemory, newTextData: string): Promise<UserProfileMemory> => {
   if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
   const ai = getAIClient();
@@ -681,6 +716,105 @@ export const scoreMultipleProjectsRelevance = async (
   return scoredProjects.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 };
 
+export const analyzeMultipleGitHubRepos = async (
+  reposData: GitHubRepo[],
+  readmeContents: (string | null)[]
+): Promise<AnalyzedProject[]> => {
+  if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
+  const ai = getAIClient();
+
+  // Build batch analysis prompt
+  const reposAnalysis = reposData.map((repo, index) => {
+    const readme = readmeContents[index];
+    return `
+REPOSITORY ${index + 1}:
+Name: ${repo.name}
+Full Name: ${repo.full_name}
+Description: ${repo.description || 'No description provided.'}
+URL: ${repo.html_url}
+Language: ${repo.language || 'Not specified.'}
+Stars: ${repo.stargazers_count}
+Forks: ${repo.forks_count}
+Last Pushed: ${repo.pushed_at}
+Topics: ${repo.topics.join(', ') || 'No topics.'}
+Has Issues: ${repo.has_issues ? 'Yes' : 'No'}
+Has Homepage: ${repo.homepage ? 'Yes' : 'No'}
+Archived: ${repo.archived ? 'Yes' : 'No'}
+${readme ? `README Content:\n${readme.substring(0, 1500)}` : 'No README available.'}
+---`;
+  }).join('\n\n');
+
+  const prompt = `
+Analyze the following ${reposData.length} GitHub repositories for resume purposes. Provide analysis for each repository.
+
+${reposAnalysis}
+
+For EACH repository, provide a JSON object with these properties:
+- completenessScore (number, 0-100: How complete and production-ready the project appears)
+- workingStatus (string: 'unknown' | 'working' | 'not working' - infer from README, homepage, issues)
+- advancedTechUsed (string[]: List of advanced technologies or algorithms used)
+- activityLevel (string: 'low' | 'medium' | 'high' - based on last pushed date, commits, issues)
+- majorProject (boolean: Is this a significant, impactful project?)
+- domainSpecific (string[]: E.g., ['web development', 'machine learning', 'data science', 'mobile development'])
+- aiSummary (string: A concise, AI-generated summary suitable for a resume)
+- suggestedBulletPoints (string[]: 3-5 concise bullet points highlighting achievements and impact for a resume, quantified where possible)
+
+Return a JSON array where each element corresponds to the repositories in order (index 0 = first repo, etc.).
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+
+    const results = JSON.parse(response.text || '[]');
+
+    // Map results to AnalyzedProject array
+    return reposData.map((repoData, index) => {
+      const result = results[index] || {};
+
+      return {
+        id: repoData.full_name,
+        repoName: repoData.full_name,
+        description: repoData.description || '',
+        htmlUrl: repoData.html_url,
+        language: repoData.language,
+        lastActivity: repoData.pushed_at,
+        completenessScore: result.completenessScore || 0,
+        workingStatus: result.workingStatus || 'unknown',
+        advancedTechUsed: result.advancedTechUsed || [],
+        activityLevel: result.activityLevel || 'low',
+        majorProject: result.majorProject || false,
+        domainSpecific: result.domainSpecific || [],
+        aiSummary: result.aiSummary || 'AI summary unavailable.',
+        suggestedBulletPoints: result.suggestedBulletPoints || [],
+      };
+    });
+
+  } catch (error) {
+    console.error("Error analyzing GitHub repos in batch:", error);
+    // Return default analyzed projects on error
+    return reposData.map(repo => ({
+      id: repo.full_name,
+      repoName: repo.full_name,
+      description: repo.description || '',
+      htmlUrl: repo.html_url,
+      language: repo.language,
+      lastActivity: repo.pushed_at,
+      completenessScore: 0,
+      workingStatus: 'unknown',
+      advancedTechUsed: [],
+      activityLevel: 'low',
+      majorProject: false,
+      domainSpecific: [],
+      aiSummary: 'Batch analysis failed due to an AI error.',
+      suggestedBulletPoints: [],
+    }));
+  }
+};
+
 export const analyzeGitHubRepo = async (repoData: GitHubRepo, readmeContent: string | null): Promise<AnalyzedProject> => {
   if (!hasApiKey()) throw new Error("API Key missing. Please configure in Settings.");
   const ai = getAIClient();
@@ -727,10 +861,10 @@ export const analyzeGitHubRepo = async (repoData: GitHubRepo, readmeContent: str
       id: repoData.full_name,
       repoName: repoData.full_name,
       description: repoData.description || '',
-      htmlUrl: repoData.html_url,
-      language: repoData.language,
-      lastActivity: repoData.pushed_at,
-      completenessScore: result.completenessScore || 0,
+        htmlUrl: repoData.html_url,
+        language: repoData.language,
+        lastActivity: repoData.pushed_at,
+        completenessScore: result.completenessScore || 0,
       workingStatus: result.workingStatus || 'unknown',
       advancedTechUsed: result.advancedTechUsed || [],
       activityLevel: result.activityLevel || 'unknown', // Need to map to 'low'|'medium'|'high'
@@ -754,7 +888,7 @@ export const analyzeGitHubRepo = async (repoData: GitHubRepo, readmeContent: str
       completenessScore: 0,
       workingStatus: 'unknown',
       advancedTechUsed: [],
-      activityLevel: 'unknown',
+      activityLevel: 'low',
       majorProject: false,
       domainSpecific: [],
       aiSummary: 'Analysis failed due to an AI error.',

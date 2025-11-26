@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings, AnalyzedProject } from './types';
-import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey, analyzeGitHubRepo, processAndMergeFilesIntoMemory, scoreMultipleProjectsRelevance } from './services/geminiService';
+import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey, analyzeGitHubRepo, analyzeMultipleGitHubRepos, processAndMergeFilesIntoMemory, scoreMultipleProjectsRelevance } from './services/geminiService';
 import { extractTextFromFile } from './services/fileService';
 import { fetchUserRepos, fetchRepoContent } from './services/githubService';
 import { signInWithGoogle, signInWithLinkedIn, signInWithGithub, signOut, subscribeToAuth, saveResumeToDB, fetchResumesFromDB, saveMemoryToDB, fetchMemoryFromDB, deleteResumeFromDB, isConfigured, linkProvider, unlinkProvider, fetchUserSettingsFromDB, saveUserSettingsToDB } from './services/firebase';
@@ -506,38 +506,53 @@ const App = () => {
       const repos = await fetchUserRepos(githubAccessToken);
       const publicRepos = repos.filter(repo => !repo.fork && !repo.private);
 
-      setGithubAnalysisProgress({ current: 0, total: publicRepos.length, repoName: '' });
-      const analyzedProjects: AnalyzedProject[] = [];
+      setGithubAnalysisProgress({ current: 0, total: publicRepos.length, repoName: 'Fetching READMEs...' });
 
+      // Collect all README contents first
+      const readmeContents: (string | null)[] = [];
       for (let i = 0; i < publicRepos.length; i++) {
         const repo = publicRepos[i];
-        setGithubAnalysisProgress({ current: i + 1, total: publicRepos.length, repoName: repo.name });
+        setGithubAnalysisProgress({ current: i + 1, total: publicRepos.length, repoName: `Fetching README for ${repo.name}` });
 
-        let readmeContent: string | null = null;
         try {
           const owner = repo.full_name.split('/')[0];
-          readmeContent = await fetchRepoContent(owner, repo.name, 'README.md', githubAccessToken);
+          const readmeContent = await fetchRepoContent(owner, repo.name, 'README.md', githubAccessToken);
+          readmeContents.push(readmeContent);
         } catch (readMeError) {
           console.warn(`Could not fetch README for ${repo.full_name}:`, readMeError);
+          readmeContents.push(null);
         }
+      }
 
-        try {
-          const analyzed = await analyzeGitHubRepo(repo, readmeContent);
-          analyzedProjects.push(analyzed);
-        } catch (analyzeError) {
-          console.error(`Error analyzing ${repo.full_name}:`, analyzeError);
-          analyzedProjects.push({
-            id: repo.full_name,
-            repoName: repo.full_name,
-            description: repo.description || 'No description provided.',
-            htmlUrl: repo.html_url,
-            language: repo.language,
-            lastActivity: repo.pushed_at,
-            completenessScore: 0, workingStatus: 'unknown', advancedTechUsed: [],
-            activityLevel: 'low', majorProject: false, domainSpecific: [],
-            aiSummary: 'AI analysis failed for this project.',
-            suggestedBulletPoints: [],
-          });
+      // Batch analyze all repositories at once
+      setGithubAnalysisProgress({ current: publicRepos.length, total: publicRepos.length, repoName: 'Analyzing repositories...' });
+      let analyzedProjects: AnalyzedProject[] = [];
+      try {
+        analyzedProjects = await analyzeMultipleGitHubRepos(publicRepos, readmeContents);
+      } catch (batchError) {
+        console.error('Batch analysis failed, falling back to individual analysis:', batchError);
+        // Fallback to individual analysis if batch fails
+        analyzedProjects = [];
+        for (let i = 0; i < publicRepos.length; i++) {
+          const repo = publicRepos[i];
+          try {
+            const analyzed = await analyzeGitHubRepo(repo, readmeContents[i]);
+            analyzedProjects.push(analyzed);
+          } catch (analyzeError) {
+            console.error(`Error analyzing ${repo.full_name}:`, analyzeError);
+            analyzedProjects.push({
+              id: repo.full_name,
+              repoName: repo.full_name,
+              description: repo.description || 'No description provided.',
+              htmlUrl: repo.html_url,
+              language: repo.language,
+              lastActivity: repo.pushed_at,
+              completenessScore: 0, workingStatus: 'unknown', advancedTechUsed: [],
+              activityLevel: 'low', majorProject: false, domainSpecific: [],
+              aiSummary: 'AI analysis failed for this project.',
+              suggestedBulletPoints: [],
+            });
+          }
         }
       }
 

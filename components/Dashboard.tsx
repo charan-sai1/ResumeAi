@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Resume, UserProfileMemory } from '../types';
 import { Card, Button, Input, TextArea } from './UIComponents';
 import { FileText, Search, Plus, Trash, UploadCloud, BrainCircuit, FileUp, AlertCircle, LogOut, AlertTriangle, MessageSquare, Send, ChevronRight, ArrowRight, Github, ExternalLink, Zap } from 'lucide-react';
-import { generateMemoryQuestions, mergeDataIntoMemory } from '../services/geminiService';
+import { generateMemoryQuestions, mergeDataIntoMemory, mergeBatchAnswersIntoMemory } from '../services/geminiService';
 import { AnalyzedProject } from '../types';
 import GitHubConnect from './GitHubConnect';
 
@@ -48,9 +48,9 @@ const Dashboard: React.FC<Props> = ({
   const [manualMemoryInput, setManualMemoryInput] = useState('');
   
   // QnA State
-  const [qnaAnswer, setQnaAnswer] = useState('');
+  const [qnaAnswers, setQnaAnswers] = useState<Record<string, string>>({});
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
-  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const [isSubmittingAnswers, setIsSubmittingAnswers] = useState(false);
   const [isSavingManualMemory, setIsSavingManualMemory] = useState(false);
 
   const filtered = resumes.filter(r => {
@@ -93,36 +93,42 @@ const Dashboard: React.FC<Props> = ({
     }
   };
 
-  const handleSubmitAnswer = async (overrideAnswer?: string) => {
-    const activeQuestion = memory.qna?.[0]; // Always take the first one
-    const answerText = overrideAnswer || qnaAnswer;
+  const handleSubmitAllAnswers = async () => {
+    const activeQuestions = memory.qna || [];
+    if (activeQuestions.length === 0) return;
 
-    if (!activeQuestion || !answerText.trim()) return;
-    
-    setIsSubmittingAnswer(true);
+    // Collect all answered Q&A pairs
+    const answeredPairs = activeQuestions
+      .map(q => ({ question: q.question, answer: qnaAnswers[q.id] || '' }))
+      .filter(pair => pair.answer.trim());
+
+    if (answeredPairs.length === 0) return;
+
+    setIsSubmittingAnswers(true);
     try {
-      const textToMerge = `Question: ${activeQuestion.question}\nAnswer: ${answerText}`;
-      
-      // 1. Merge answer into memory
-      const updatedMemoryContent = await mergeDataIntoMemory(memory, textToMerge);
-      
-      // 2. Remove the answered question from list
-      const updatedQnA = (memory.qna || []).slice(1); // Remove first item
-      
+      // Batch merge all answers at once
+      const updatedMemoryContent = await mergeBatchAnswersIntoMemory(memory, answeredPairs);
+
+      // Remove all answered questions from the list
       const finalMemory = {
         ...updatedMemoryContent,
-        qna: updatedQnA,
+        qna: [],
         rawSourceFiles: memory.rawSourceFiles
       };
 
       await onUpdateMemory(finalMemory);
-      
-      setQnaAnswer('');
+
+      // Clear answers
+      setQnaAnswers({});
     } catch (e) {
-      console.error(e);
+      console.error('Error submitting batch answers:', e);
     } finally {
-      setIsSubmittingAnswer(false);
+      setIsSubmittingAnswers(false);
     }
+  };
+
+  const handleAnswerChange = (questionId: string, answer: string) => {
+    setQnaAnswers(prev => ({ ...prev, [questionId]: answer }));
   };
 
   const memoryCount = memory.experiences.length + memory.projects.length + memory.educations.length;
@@ -373,52 +379,67 @@ const Dashboard: React.FC<Props> = ({
             </div>
           )}
 
-          <div className="mt-6 border-t border-slate-800 pt-6">
-            <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><MessageSquare className="w-5 h-5 text-indigo-400" /> AI Clarification Questions</h3>
-            {activeQuestions.length > 0 ? (
-              <Card className="p-4 border border-indigo-500/30 bg-indigo-900/10">
-                <p className="text-white font-medium mb-3">{currentQuestion.question}</p>
-                {currentQuestion.options && currentQuestion.options.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {currentQuestion.options.map((option, index) => (
-                      <Button key={index} variant="secondary" onClick={() => handleSubmitAnswer(option)} className="text-xs">
-                        {option}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <Input 
-                    type="text"
-                    value={qnaAnswer}
-                    onChange={(e) => setQnaAnswer(e.target.value)}
-                    placeholder="Type your answer here..."
-                    className="flex-grow"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') handleSubmitAnswer();
-                    }}
-                  />
-                  <Button onClick={() => handleSubmitAnswer()} loading={isSubmittingAnswer} disabled={!qnaAnswer.trim()}>
-                    <Send className="w-4 h-4" />
-                  </Button>
-                </div>
-              </Card>
-            ) : (
-              <>
-                <p className="text-slate-500 text-sm mb-4">
-                  AI can ask clarifying questions to enrich your memory.
-                </p>
-                <Button 
-                  variant="secondary" 
-                  onClick={handleGenerateQuestions} 
-                  loading={isGeneratingQuestions}
-                  className="w-full"
-                >
-                  <MessageSquare className="w-4 h-4 mr-2" /> Generate Questions
-                </Button>
-              </>
-            )}
-          </div>
+           <div className="mt-6 border-t border-slate-800 pt-6">
+             <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><MessageSquare className="w-5 h-5 text-indigo-400" /> AI Clarification Questions</h3>
+             {activeQuestions.length > 0 ? (
+               <Card className="p-4 border border-indigo-500/30 bg-indigo-900/10">
+                 <div className="space-y-4">
+                   {activeQuestions.map((question, index) => (
+                     <div key={question.id} className="border-b border-slate-700 pb-4 last:border-b-0 last:pb-0">
+                       <p className="text-white font-medium mb-2">Q{index + 1}: {question.question}</p>
+                       {question.options && question.options.length > 0 && (
+                         <div className="flex flex-wrap gap-2 mb-3">
+                           {question.options.map((option, optIndex) => (
+                             <Button
+                               key={optIndex}
+                               variant="secondary"
+                               onClick={() => handleAnswerChange(question.id, option)}
+                               className="text-xs"
+                             >
+                               {option}
+                             </Button>
+                           ))}
+                         </div>
+                       )}
+                       <Input
+                         type="text"
+                         value={qnaAnswers[question.id] || ''}
+                         onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                         placeholder="Type your answer here..."
+                         className="w-full"
+                       />
+                     </div>
+                   ))}
+                   <div className="flex justify-end pt-4">
+                     <Button
+                       onClick={handleSubmitAllAnswers}
+                       loading={isSubmittingAnswers}
+                       disabled={activeQuestions.every(q => !qnaAnswers[q.id]?.trim())}
+                       className="bg-indigo-600 hover:bg-indigo-700"
+                     >
+                       <Send className="w-4 h-4 mr-2" />
+                       Submit All Answers
+                     </Button>
+                   </div>
+                 </div>
+               </Card>
+             ) : (
+               <>
+                 <p className="text-slate-500 text-sm mb-4">
+                   AI can ask clarifying questions to enrich your memory.
+                 </p>
+                 <Button
+                   variant="secondary"
+                   onClick={handleGenerateQuestions}
+                   loading={isGeneratingQuestions}
+                   disabled={isGeneratingQuestions}
+                 >
+                   <BrainCircuit className="w-4 h-4 mr-2" />
+                   Generate Questions
+                 </Button>
+               </>
+              )}
+            </div>
         </Card>
 
         {/* Right Column: GitHub Profile Analysis */}
