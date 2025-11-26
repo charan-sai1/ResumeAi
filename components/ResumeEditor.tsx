@@ -13,6 +13,7 @@ import { Sparkles } from 'lucide-react';
 import { BookOpen } from 'lucide-react';
 import { EyeOff } from 'lucide-react';
 import { enhanceContent, optimizeSkills, generateContentFromMemory } from '../services/geminiService';
+import ATSOptimization from './ATSOptimization';
 
 interface Props {
   resume: Resume;
@@ -592,6 +593,20 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory })
            )}
         </div>
       )}
+
+      {/* ATS Optimization */}
+      <div className="border-b border-slate-800">
+        <SectionHeader
+          title="ATS Optimization"
+          isOpen={expandedSection === 'ats'}
+          onClick={() => setExpandedSection(expandedSection === 'ats' ? '' : 'ats')}
+        />
+        {expandedSection === 'ats' && (
+          <div className="p-6 bg-slate-950/50">
+            <ATSOptimization resume={resume} onUpdateResume={setResume} />
+          </div>
+        )}
+      </div>
     </div>
   );
 });

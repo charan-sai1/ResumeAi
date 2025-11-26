@@ -95,6 +95,13 @@ export interface ATSAnalysis {
   keywords_missing: string[];
 }
 
+export interface SkillGapAnalysis {
+  missingSkills: string[];
+  transferableSkills: Array<{userSkill: string, targetSkill: string, explanation: string}>;
+  recommendedActions: string[];
+  confidence: number; // 0-100
+}
+
 export interface GroundingChunk {
   web?: {
     uri: string;

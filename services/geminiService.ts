@@ -896,3 +896,165 @@ export const analyzeGitHubRepo = async (repoData: GitHubRepo, readmeContent: str
     };
   }
 };
+
+// Ethical ATS Optimization Functions
+export interface SkillGapAnalysis {
+  missingSkills: string[];
+  transferableSkills: Array<{userSkill: string, targetSkill: string, explanation: string}>;
+  recommendedActions: string[];
+  confidence: number; // 0-100
+}
+
+export const analyzeSkillGaps = async (
+  userResume: Resume,
+  jobDescription: string
+): Promise<SkillGapAnalysis> => {
+  if (!hasApiKey()) {
+    return {
+      missingSkills: [],
+      transferableSkills: [],
+      recommendedActions: ["Add your Gemini API key to enable skill gap analysis"],
+      confidence: 0
+    };
+  }
+
+  const ai = getAIClient();
+
+  const prompt = `
+  Analyze the skill gaps between this candidate's resume and the job requirements.
+  Provide ethical, actionable recommendations to address gaps legitimately.
+
+  JOB DESCRIPTION:
+  ${jobDescription}
+
+  CANDIDATE RESUME:
+  ${JSON.stringify(userResume)}
+
+  Return a JSON analysis with:
+  - missingSkills: Array of skills clearly missing from resume
+  - transferableSkills: Array of objects with {userSkill, targetSkill, explanation} for skills that can transfer
+  - recommendedActions: Specific, ethical steps to acquire missing skills (courses, projects, certifications)
+  - confidence: Number 0-100 indicating how well the candidate matches overall
+
+  Focus on LEGITIMATE skill development and experience reframing, not manipulation.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+
+    const result = JSON.parse(response.text || '{}');
+    return {
+      missingSkills: result.missingSkills || [],
+      transferableSkills: result.transferableSkills || [],
+      recommendedActions: result.recommendedActions || [],
+      confidence: Math.min(100, Math.max(0, result.confidence || 0))
+    };
+  } catch (error) {
+    console.error("Skill gap analysis error:", error);
+    return {
+      missingSkills: [],
+      transferableSkills: [],
+      recommendedActions: ["Unable to analyze skills - check API key"],
+      confidence: 0
+    };
+  }
+};
+
+export const enhanceExperienceForATS = async (
+  experience: string,
+  targetSkills: string[]
+): Promise<string> => {
+  if (!hasApiKey()) return experience;
+
+  const ai = getAIClient();
+
+  const prompt = `
+  Enhance this work experience description to better highlight transferable skills and relevant competencies.
+  Make it more ATS-friendly while remaining completely truthful and professional.
+
+  ORIGINAL EXPERIENCE:
+  ${experience}
+
+  TARGET SKILLS TO EMPHASIZE:
+  ${targetSkills.join(', ')}
+
+  REQUIREMENTS:
+  - Keep all information 100% truthful
+  - Use industry-standard terminology
+  - Highlight quantifiable achievements
+  - Maintain professional tone
+  - Make it more searchable for ATS systems
+
+  Return only the enhanced experience description, no explanations.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: prompt
+    });
+
+    return response.text?.trim() || experience;
+  } catch (error) {
+    console.error("Experience enhancement error:", error);
+    return experience;
+  }
+};
+
+export const optimizeResumeKeywords = async (
+  resume: Resume,
+  jobDescription: string
+): Promise<{optimizedResume: Resume, keywordMatches: string[], suggestions: string[]}> => {
+  if (!hasApiKey()) {
+    return {
+      optimizedResume: resume,
+      keywordMatches: [],
+      suggestions: ["Add Gemini API key for keyword optimization"]
+    };
+  }
+
+  const ai = getAIClient();
+
+  const prompt = `
+  Analyze this resume against the job description and provide keyword optimization suggestions.
+  Focus on legitimate keyword integration, not stuffing or manipulation.
+
+  JOB DESCRIPTION:
+  ${jobDescription}
+
+  RESUME:
+  ${JSON.stringify(resume)}
+
+  Return JSON with:
+  - keywordMatches: Array of keywords from job description that appear in resume
+  - suggestions: Array of specific suggestions for natural keyword integration
+  - Do not modify the resume - just provide analysis and suggestions
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_FAST,
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+
+    const result = JSON.parse(response.text || '{}');
+
+    return {
+      optimizedResume: resume, // Keep original for ethical reasons
+      keywordMatches: result.keywordMatches || [],
+      suggestions: result.suggestions || []
+    };
+  } catch (error) {
+    console.error("Keyword optimization error:", error);
+    return {
+      optimizedResume: resume,
+      keywordMatches: [],
+      suggestions: ["Unable to analyze keywords - check API key"]
+    };
+  }
+};
