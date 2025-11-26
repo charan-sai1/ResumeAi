@@ -16,7 +16,7 @@ interface ProjectSelectorProps {
   loading?: boolean;
 }
 
-const ProjectSelector: React.FC<ProjectSelectorProps> = ({
+const ProjectSelector: React.FC<ProjectSelectorProps> = React.memo(({
   projects,
   selectedProjects,
   onToggleProject,
@@ -182,6 +182,8 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       </div>
     </div>
   );
-};
+});
+
+ProjectSelector.displayName = 'ProjectSelector';
 
 export default ProjectSelector;

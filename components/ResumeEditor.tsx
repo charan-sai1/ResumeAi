@@ -206,13 +206,13 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory })
   );
 
   const MemoryButton = ({ onClick, loading, label }: any) => (
-    <button 
+    <button
       onClick={onClick}
       disabled={loading}
-      className="flex items-center gap-1.5 text-[10px] font-medium text-purple-400 hover:text-purple-300 transition-colors mt-1 mb-2 bg-purple-900/10 hover:bg-purple-900/20 px-2 py-1 rounded border border-purple-500/20"
+      className="flex items-center gap-2 text-xs font-medium text-purple-400 hover:text-purple-300 transition-colors mt-1 mb-2 bg-purple-900/10 hover:bg-purple-900/20 px-3 py-2 rounded border border-purple-500/20 min-w-[140px] justify-center"
       title="Generate content based on your uploaded files and career memory"
     >
-      <BrainCircuit className={`w-3 h-3 ${loading ? 'animate-pulse' : ''}`} />
+      <BrainCircuit className={`w-4 h-4 ${loading ? 'animate-pulse' : ''}`} />
       {loading ? 'Generating...' : label || 'Auto-Fill from Memory'}
     </button>
   );

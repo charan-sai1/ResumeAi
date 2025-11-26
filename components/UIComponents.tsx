@@ -47,8 +47,8 @@ export const TextArea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement
   </div>
 );
 
-export const Card: React.FC<{ children: React.ReactNode, className?: string }> = ({ children, className = '' }) => (
-  <div className={`bg-slate-900 border border-slate-800 rounded-xl p-6 ${className}`}>
+export const Card: React.FC<{ children: React.ReactNode, className?: string } & React.HTMLAttributes<HTMLDivElement>> = ({ children, className = '', ...props }) => (
+  <div className={`bg-slate-900 border border-slate-800 rounded-xl p-6 ${className}`} {...props}>
     {children}
   </div>
 );
