@@ -1,13 +1,19 @@
 import React from 'react';
 import { Resume } from '../types';
-import { MapPin, Phone, Mail, Linkedin, Globe, Github, ExternalLink } from 'lucide-react';
+import { MapPin } from 'lucide-react';
+import { Phone } from 'lucide-react';
+import { Mail } from 'lucide-react';
+import { Linkedin } from 'lucide-react';
+import { Globe } from 'lucide-react';
+import { Github } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 
 interface Props {
   resume: Resume;
   id: string; // for html2canvas targeting
 }
 
-const ResumePreview: React.FC<Props> = ({ resume, id }) => {
+const ResumePreview: React.FC<Props> = React.memo(({ resume, id }) => {
   
   // Helper to render markdown bolding
   const parseMarkdown = (text: string) => {
@@ -248,6 +254,8 @@ const ResumePreview: React.FC<Props> = ({ resume, id }) => {
       )}
     </div>
   );
-};
+});
+
+ResumePreview.displayName = 'ResumePreview';
 
 export default ResumePreview;

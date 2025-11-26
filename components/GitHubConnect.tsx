@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { Card, Button } from './UIComponents';
-import { Github, Check, Loader, AlertCircle, Zap, ExternalLink } from 'lucide-react';
+import { Github } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { Loader } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import { Zap } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { UserProfileMemory } from '../types';
 
 interface GitHubConnectProps {

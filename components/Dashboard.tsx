@@ -1,11 +1,167 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Resume, UserProfileMemory } from '../types';
 import { Card, Button, Input, TextArea } from './UIComponents';
-import { FileText, Search, Plus, Trash, UploadCloud, BrainCircuit, FileUp, AlertCircle, LogOut, AlertTriangle, MessageSquare, Send, ChevronRight, ArrowRight, Github, ExternalLink, Zap } from 'lucide-react';
+import { FileText } from 'lucide-react';
+import { Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { Trash } from 'lucide-react';
+import { UploadCloud } from 'lucide-react';
+import { BrainCircuit } from 'lucide-react';
+import { FileUp } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import { LogOut } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
+import { Send } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+import { Github } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { generateMemoryQuestions, mergeDataIntoMemory, mergeBatchAnswersIntoMemory } from '../services/geminiService';
 import { AnalyzedProject } from '../types';
 import GitHubConnect from './GitHubConnect';
+
+// Memory Overview Component
+const MemoryOverview: React.FC<{
+  memory: UserProfileMemory;
+  memoryCount: number;
+  activeQuestions: any[];
+  onGenerateQuestions: () => void;
+  isGeneratingQuestions: boolean;
+}> = React.memo(({ memory, memoryCount, activeQuestions, onGenerateQuestions, isGeneratingQuestions }) => (
+  <Card className="p-6">
+    <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+      <BrainCircuit className="w-6 h-6 text-purple-400" /> Memory Overview
+    </h2>
+
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="text-center">
+        <div className="text-2xl font-bold text-blue-400">{memory.experiences.length}</div>
+        <div className="text-sm text-slate-400">Experiences</div>
+      </div>
+      <div className="text-center">
+        <div className="text-2xl font-bold text-green-400">{memory.projects.length}</div>
+        <div className="text-sm text-slate-400">Projects</div>
+      </div>
+      <div className="text-center">
+        <div className="text-2xl font-bold text-yellow-400">{memory.educations.length}</div>
+        <div className="text-sm text-slate-400">Education</div>
+      </div>
+      <div className="text-center">
+        <div className="text-2xl font-bold text-purple-400">{memoryCount}</div>
+        <div className="text-sm text-slate-400">Total Items</div>
+      </div>
+    </div>
+
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-white">Source Files:</h4>
+        <span className="text-sm text-slate-400">{memory.rawSourceFiles.length} files</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {memory.rawSourceFiles.slice(0, 5).map((fileName, index) => (
+          <span key={index} className="flex items-center gap-1 text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded-full">
+            <FileText className="w-3 h-3" /> {fileName}
+          </span>
+        ))}
+        {memory.rawSourceFiles.length > 5 && (
+          <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded-full">
+            +{memory.rawSourceFiles.length - 5} more
+          </span>
+        )}
+      </div>
+    </div>
+  </Card>
+));
+
+MemoryOverview.displayName = 'MemoryOverview';
+
+// Q&A Section Component
+const QnASection: React.FC<{
+  activeQuestions: any[];
+  qnaAnswers: Record<string, string>;
+  onAnswerChange: (questionId: string, answer: string) => void;
+  onSubmitAllAnswers: () => void;
+  onGenerateQuestions: () => void;
+  isSubmittingAnswers: boolean;
+  isGeneratingQuestions: boolean;
+}> = React.memo(({
+  activeQuestions,
+  qnaAnswers,
+  onAnswerChange,
+  onSubmitAllAnswers,
+  onGenerateQuestions,
+  isSubmittingAnswers,
+  isGeneratingQuestions
+}) => (
+  <div className="mt-6 border-t border-slate-800 pt-6">
+    <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+      <MessageSquare className="w-5 h-5 text-indigo-400" /> AI Clarification Questions
+    </h3>
+    {activeQuestions.length > 0 ? (
+      <Card className="p-4 border border-indigo-500/30 bg-indigo-900/10">
+        <div className="space-y-4">
+          {activeQuestions.map((question, index) => (
+            <div key={question.id} className="border-b border-slate-700 pb-4 last:border-b-0 last:pb-0">
+              <p className="text-white font-medium mb-2">Q{index + 1}: {question.question}</p>
+              {question.options && question.options.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {question.options.map((option, optIndex) => (
+                    <Button
+                      key={optIndex}
+                      variant="secondary"
+                      onClick={() => onAnswerChange(question.id, option)}
+                      className="text-xs"
+                    >
+                      {option}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              <Input
+                type="text"
+                value={qnaAnswers[question.id] || ''}
+                onChange={(e) => onAnswerChange(question.id, e.target.value)}
+                placeholder="Type your answer here..."
+                className="w-full"
+              />
+            </div>
+          ))}
+          <div className="flex justify-end pt-4">
+            <Button
+              onClick={onSubmitAllAnswers}
+              loading={isSubmittingAnswers}
+              disabled={activeQuestions.every(q => !qnaAnswers[q.id]?.trim())}
+              className="bg-indigo-600 hover:bg-indigo-700"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              Submit All Answers
+            </Button>
+          </div>
+        </div>
+      </Card>
+    ) : (
+      <>
+        <p className="text-slate-500 text-sm mb-4">
+          AI can ask clarifying questions to enrich your memory.
+        </p>
+        <Button
+          variant="secondary"
+          onClick={onGenerateQuestions}
+          loading={isGeneratingQuestions}
+          disabled={isGeneratingQuestions}
+        >
+          <BrainCircuit className="w-4 h-4 mr-2" />
+          Generate Questions
+        </Button>
+      </>
+    )}
+  </div>
+));
+
+QnASection.displayName = 'QnASection';
 
 interface Props {
   resumes: Resume[];
@@ -26,7 +182,7 @@ interface Props {
   githubAnalysisProgress: { current: number; total: number; repoName: string };
 }
 
-const Dashboard: React.FC<Props> = ({
+const Dashboard: React.FC<Props> = React.memo(({
   resumes,
   memory,
   onEdit,
@@ -53,11 +209,13 @@ const Dashboard: React.FC<Props> = ({
   const [isSubmittingAnswers, setIsSubmittingAnswers] = useState(false);
   const [isSavingManualMemory, setIsSavingManualMemory] = useState(false);
 
-  const filtered = resumes.filter(r => {
-    const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || r.personalInfo.fullName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRole = filterRole ? r.title.toLowerCase().includes(filterRole.toLowerCase()) : true;
-    return matchesSearch && matchesRole;
-  });
+  const filtered = useMemo(() => {
+    return resumes.filter(r => {
+      const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || r.personalInfo.fullName.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesRole = filterRole ? r.title.toLowerCase().includes(filterRole.toLowerCase()) : true;
+      return matchesSearch && matchesRole;
+    });
+  }, [resumes, searchTerm, filterRole]);
 
   // Manual file selection handler
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,8 +289,11 @@ const Dashboard: React.FC<Props> = ({
     setQnaAnswers(prev => ({ ...prev, [questionId]: answer }));
   };
 
-  const memoryCount = memory.experiences.length + memory.projects.length + memory.educations.length;
-  const activeQuestions = memory.qna || [];
+  const memoryCount = useMemo(() => {
+    return memory.experiences.length + memory.projects.length + memory.educations.length;
+  }, [memory.experiences.length, memory.projects.length, memory.educations.length]);
+
+  const activeQuestions = useMemo(() => memory.qna || [], [memory.qna]);
   const currentQuestion = activeQuestions[0]; // Get only the first question
 
   return (
@@ -379,67 +540,15 @@ const Dashboard: React.FC<Props> = ({
             </div>
           )}
 
-           <div className="mt-6 border-t border-slate-800 pt-6">
-             <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><MessageSquare className="w-5 h-5 text-indigo-400" /> AI Clarification Questions</h3>
-             {activeQuestions.length > 0 ? (
-               <Card className="p-4 border border-indigo-500/30 bg-indigo-900/10">
-                 <div className="space-y-4">
-                   {activeQuestions.map((question, index) => (
-                     <div key={question.id} className="border-b border-slate-700 pb-4 last:border-b-0 last:pb-0">
-                       <p className="text-white font-medium mb-2">Q{index + 1}: {question.question}</p>
-                       {question.options && question.options.length > 0 && (
-                         <div className="flex flex-wrap gap-2 mb-3">
-                           {question.options.map((option, optIndex) => (
-                             <Button
-                               key={optIndex}
-                               variant="secondary"
-                               onClick={() => handleAnswerChange(question.id, option)}
-                               className="text-xs"
-                             >
-                               {option}
-                             </Button>
-                           ))}
-                         </div>
-                       )}
-                       <Input
-                         type="text"
-                         value={qnaAnswers[question.id] || ''}
-                         onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-                         placeholder="Type your answer here..."
-                         className="w-full"
-                       />
-                     </div>
-                   ))}
-                   <div className="flex justify-end pt-4">
-                     <Button
-                       onClick={handleSubmitAllAnswers}
-                       loading={isSubmittingAnswers}
-                       disabled={activeQuestions.every(q => !qnaAnswers[q.id]?.trim())}
-                       className="bg-indigo-600 hover:bg-indigo-700"
-                     >
-                       <Send className="w-4 h-4 mr-2" />
-                       Submit All Answers
-                     </Button>
-                   </div>
-                 </div>
-               </Card>
-             ) : (
-               <>
-                 <p className="text-slate-500 text-sm mb-4">
-                   AI can ask clarifying questions to enrich your memory.
-                 </p>
-                 <Button
-                   variant="secondary"
-                   onClick={handleGenerateQuestions}
-                   loading={isGeneratingQuestions}
-                   disabled={isGeneratingQuestions}
-                 >
-                   <BrainCircuit className="w-4 h-4 mr-2" />
-                   Generate Questions
-                 </Button>
-               </>
-              )}
-            </div>
+          <QnASection
+            activeQuestions={activeQuestions}
+            qnaAnswers={qnaAnswers}
+            onAnswerChange={handleAnswerChange}
+            onSubmitAllAnswers={handleSubmitAllAnswers}
+            onGenerateQuestions={handleGenerateQuestions}
+            isSubmittingAnswers={isSubmittingAnswers}
+            isGeneratingQuestions={isGeneratingQuestions}
+          />
         </Card>
 
         {/* Right Column: GitHub Profile Analysis */}
@@ -679,6 +788,8 @@ const Dashboard: React.FC<Props> = ({
 
     </div>
   );
-};
+});
+
+Dashboard.displayName = 'Dashboard';
 
 export default Dashboard;

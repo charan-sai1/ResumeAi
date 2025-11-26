@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button } from './UIComponents';
-import { Check, Loader, Star, Github, ExternalLink, Zap } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { Loader } from 'lucide-react';
+import { Star } from 'lucide-react';
+import { Github } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { AnalyzedProject } from '../types';
 
 interface ProjectSelectorProps {

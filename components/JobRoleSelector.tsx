@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Card, Button, Input } from './UIComponents';
-import { Briefcase, Search, Check } from 'lucide-react';
+import { Briefcase } from 'lucide-react';
+import { Search } from 'lucide-react';
+import { Check } from 'lucide-react';
 
 interface JobRole {
   id: string;

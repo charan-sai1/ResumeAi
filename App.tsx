@@ -1,17 +1,72 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+
+// LocalStorage utilities with error handling and batching
+const localStorageUtils = {
+  get: (key: string, defaultValue: any = null) => {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
+    } catch (error) {
+      console.warn(`Error reading localStorage key "${key}":`, error);
+      return defaultValue;
+    }
+  },
+
+  set: (key: string, value: any) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.warn(`Error writing localStorage key "${key}":`, error);
+    }
+  },
+
+  batchSet: (operations: Array<{ key: string; value: any }>) => {
+    try {
+      operations.forEach(({ key, value }) => {
+        localStorage.setItem(key, JSON.stringify(value));
+      });
+    } catch (error) {
+      console.warn('Error batch writing to localStorage:', error);
+    }
+  }
+};
 import { Resume, ATSAnalysis, UserProfileMemory, GroundingChunk, UserSettings, AnalyzedProject } from './types';
 import { analyzeATS, tailorResumeToJob, mergeDataIntoMemory, generateResumeFromMemory, sanitizeResume, sanitizeMemory, rewriteResumeForATS, setUserApiKey, hasApiKey, validateApiKey, analyzeGitHubRepo, analyzeMultipleGitHubRepos, processAndMergeFilesIntoMemory, scoreMultipleProjectsRelevance } from './services/geminiService';
 import { extractTextFromFile } from './services/fileService';
 import { fetchUserRepos, fetchRepoContent } from './services/githubService';
 import { signInWithGoogle, signInWithLinkedIn, signInWithGithub, signOut, subscribeToAuth, saveResumeToDB, fetchResumesFromDB, saveMemoryToDB, fetchMemoryFromDB, deleteResumeFromDB, isConfigured, linkProvider, unlinkProvider, fetchUserSettingsFromDB, saveUserSettingsToDB } from './services/firebase';
-import ResumeEditor from './components/ResumeEditor';
-import ResumePreview from './components/ResumePreview';
+const ResumeEditor = lazy(() => import('./components/ResumeEditor'));
+const ResumePreview = lazy(() => import('./components/ResumePreview'));
 import Dashboard from './components/Dashboard';
 import JobRoleSelector from './components/JobRoleSelector';
 import ProjectSelector from './components/ProjectSelector';
 import GitHubConnect from './components/GitHubConnect';
 import { Button, Modal, TextArea, Toast, LoadingOverlay, DragOverlay, Card, Input } from './components/UIComponents';
-import { Download, Wand2, ArrowLeft, Gauge, AlertCircle, LogOut, LogIn, AlertTriangle, HelpCircle, ExternalLink, UserCircle, Copy, Settings, Linkedin, Zap, Eye, Edit, Search, Sparkles, Github, Check, Link as LinkIcon, Unlink, Key, Save } from 'lucide-react';
+import { Download } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
+import { Gauge } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import { LogOut } from 'lucide-react';
+import { LogIn } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
+import { UserCircle } from 'lucide-react';
+import { Copy } from 'lucide-react';
+import { Settings } from 'lucide-react';
+import { Linkedin } from 'lucide-react';
+import { Zap } from 'lucide-react';
+import { Eye } from 'lucide-react';
+import { Edit } from 'lucide-react';
+import { Search } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
+import { Github } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { Link as LinkIcon } from 'lucide-react';
+import { Unlink } from 'lucide-react';
+import { Key } from 'lucide-react';
+import { Save } from 'lucide-react';
 
 // --- Mock Data Initial State ---
 const initialResume: Resume = {
@@ -157,13 +212,13 @@ const App = () => {
   // --- Guest Mode Persistence ---
   useEffect(() => {
     if (user?.isGuest) {
-      localStorage.setItem('guest_resumes', JSON.stringify(resumes));
+      localStorageUtils.set('guest_resumes', resumes);
     }
   }, [resumes, user]);
 
   useEffect(() => {
     if (user?.isGuest) {
-      localStorage.setItem('guest_memory', JSON.stringify(userMemory));
+      localStorageUtils.set('guest_memory', userMemory);
     }
   }, [userMemory, user]);
 
@@ -302,14 +357,15 @@ const App = () => {
     setIsAuthLoading(false);
     
     try {
-      const savedResumes = localStorage.getItem('guest_resumes');
-      const savedMemory = localStorage.getItem('guest_memory');
+      const savedResumes = localStorageUtils.get('guest_resumes', null);
+      const savedMemory = localStorageUtils.get('guest_memory', null);
       // Sanitize loaded data
-      if (savedResumes) {
-        const parsed = JSON.parse(savedResumes);
-        if (Array.isArray(parsed)) setResumes(parsed.map(sanitizeResume));
+      if (savedResumes && Array.isArray(savedResumes)) {
+        setResumes(savedResumes.map(sanitizeResume));
       }
-      if (savedMemory) setUserMemory(sanitizeMemory(JSON.parse(savedMemory)));
+      if (savedMemory) {
+        setUserMemory(sanitizeMemory(savedMemory));
+      }
     } catch(e) {
       console.error("Local storage error", e);
     }
@@ -348,7 +404,7 @@ const App = () => {
       await saveMemoryToDB(user.uid, safeMemory);
       console.log('Memory saved to Firebase');
     } else if (user?.isGuest) {
-      localStorage.setItem('guest_memory', JSON.stringify(safeMemory));
+      localStorageUtils.set('guest_memory', safeMemory);
       console.log('Memory saved to localStorage');
     }
   }, [user]); // Depend on user
@@ -989,7 +1045,9 @@ const App = () => {
                
                {/* Editor Content (Scrollable) */}
                <div className="flex-1 relative overflow-hidden flex flex-col">
-                  <ResumeEditor resume={currentResume} setResume={setCurrentResume} memory={userMemory} />
+                  <Suspense fallback={<div className="flex items-center justify-center p-8"><div className="text-white">Loading editor...</div></div>}>
+                    <ResumeEditor resume={currentResume} setResume={setCurrentResume} memory={userMemory} />
+                  </Suspense>
                   
                   {/* ATS Overlay */}
                   {atsAnalysis && (
@@ -1025,7 +1083,9 @@ const App = () => {
             <div className={`flex-1 bg-slate-900 flex flex-col transition-all relative ${mobileTab === 'preview' ? 'flex' : 'hidden lg:flex'}`}>
               {/* Preview Canvas Container */}
               <div className="flex-1 overflow-auto p-4 flex justify-center items-start bg-slate-900/50">
-                 <ResumePreview resume={currentResume} id="resume-preview-container" />
+                 <Suspense fallback={<div className="flex items-center justify-center p-8"><div className="text-white">Loading preview...</div></div>}>
+                   <ResumePreview resume={currentResume} id="resume-preview-container" />
+                 </Suspense>
               </div>
             </div>
           </>

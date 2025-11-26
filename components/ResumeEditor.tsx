@@ -1,7 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Resume, ExperienceItem, EducationItem, ProjectItem, UserProfileMemory, LeadershipActivity } from '../types';
 import { Input, TextArea, Button, AIEnhanceButton, Card } from './UIComponents';
-import { Plus, Trash2, ChevronDown, ChevronUp, X, ExternalLink, Github, BrainCircuit, Sparkles, BookOpen, EyeOff } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import { ChevronUp } from 'lucide-react';
+import { X } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
+import { Github } from 'lucide-react';
+import { BrainCircuit } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
+import { BookOpen } from 'lucide-react';
+import { EyeOff } from 'lucide-react';
 import { enhanceContent, optimizeSkills, generateContentFromMemory } from '../services/geminiService';
 
 interface Props {
@@ -10,10 +20,15 @@ interface Props {
   memory: UserProfileMemory;
 }
 
-const ResumeEditor: React.FC<Props> = ({ resume, setResume, memory }) => {
+const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory }) => {
   const [loadingField, setLoadingField] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string>('personal');
   const [newSkill, setNewSkill] = useState('');
+
+  // Memoize existing skills for performance
+  const existingSkillsSet = useMemo(() => {
+    return new Set(resume.skills.map(s => s.toLowerCase()));
+  }, [resume.skills]);
 
   // Helper to ensure value is always a string for Inputs
   const safeStr = (val: any) => {
@@ -57,8 +72,7 @@ const ResumeEditor: React.FC<Props> = ({ resume, setResume, memory }) => {
   };
   
   const handleAddSkillsFromMemory = () => {
-    const existingSkills = new Set(resume.skills.map(s => s.toLowerCase()));
-    const newSkillsFromMemory = memory.skills.filter(s => !existingSkills.has(s.toLowerCase()));
+    const newSkillsFromMemory = memory.skills.filter(s => !existingSkillsSet.has(s.toLowerCase()));
     
     if (newSkillsFromMemory.length > 0) {
       setResume({ ...resume, skills: [...resume.skills, ...newSkillsFromMemory] });
@@ -580,6 +594,8 @@ const ResumeEditor: React.FC<Props> = ({ resume, setResume, memory }) => {
       )}
     </div>
   );
-};
+});
+
+ResumeEditor.displayName = 'ResumeEditor';
 
 export default ResumeEditor;

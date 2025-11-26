@@ -1,6 +1,11 @@
 
 import React, { useEffect } from 'react';
-import { Loader2, Sparkles, CheckCircle, XCircle, UploadCloud, FileText } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
+import { XCircle } from 'lucide-react';
+import { UploadCloud } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'ai', loading?: boolean }> = 
   ({ children, className = '', variant = 'primary', loading, ...props }) => {
