@@ -790,8 +790,8 @@ const App = () => {
         id: project.id,
         name: project.repoName,
         description: project.aiSummary, // Use AI summary as description
-        link: project.htmlUrl, // Link to the GitHub repo
-        repoLink: project.htmlUrl, // Assuming repoLink is also htmlUrl
+        link: '', // Demo link - leave empty for GitHub projects
+        repoLink: project.htmlUrl, // GitHub repository URL
       }],
       // Optionally add advancedTechUsed as skills
       skills: [...initialResume.skills, ...project.advancedTechUsed],

@@ -324,103 +324,85 @@ export const sanitizeMemory = (data: any): UserProfileMemory => {
 const PROMPT_TEMPLATES = {
 
   enhance: (content: string, context: string) => `
-  ROLE: You are an elite HR Director at a Fortune 100 company with 20+ years of experience in executive resume optimization and ATS systems.
+   ROLE: Elite Resume Optimizer - Create 1-minute readable, ultra-impactful content.
 
-  OBJECTIVE: Transform the input into maximum-impact, quantified achievements that pass 99% of ATS systems and impress hiring managers in <6 seconds.
+   OBJECTIVE: Transform content into concise, quantified achievements that recruiters read in 60 seconds.
 
-  CORE PRINCIPLES (MANDATORY):
-  1. QUANTIFY EVERYTHING - Every achievement must have numbers (%, $, time saved, users impacted, efficiency gains)
-  2. DEDUPLICATE RUTHLESSLY - Remove all redundant information, merge similar points
-  3. THINK LIKE AN HR EXECUTIVE - Focus on business impact, not technical tasks
-  4. MAXIMUM BULLET POINTS - Generate 4-6 strong bullets per experience (not 2-3)
+   CORE RULES:
+   1. 1-MINUTE READABILITY - Entire resume readable in 60 seconds
+   2. ULTRA-CONCISE - Maximum impact with minimum words
+   3. QUANTIFY EVERYTHING - Numbers in every bullet (%, $, time, scale)
+   4. DEDUPLICATE MERCILESSLY - Remove redundancy, merge similar points
 
-  TASK: Intensify and enhance the following content.
-  Context: ${context}
+   TASK: Enhance content for maximum impact.
+   Context: ${context}
 
-  STRICT FORMAT RULES:
-  - Each bullet MUST:
-    • Start with "* "
-    • Begin with a Power Verb (Led, Engineered, Accelerated, Optimized, Delivered, Orchestrated, Scaled, Built, Automated, Reduced, Increased, Revamped, Pioneered, Streamlined, Spearheaded, Architected, Transformed)
-    • Follow: [Action Verb] + [What] + [How/Method] + [Quantified Impact]
-    • Include AT LEAST 2 metrics per bullet
+   FORMAT RULES:
+   - Start with "* " + Power Verb (Led, Built, Scaled, Optimized, Delivered)
+   - Structure: Action + What + Quantified Impact
+   - 1 line maximum per bullet
+   - 2+ metrics per bullet minimum
 
-  QUANTIFICATION RULES (CRITICAL):
-  - Always include: percentages (%), dollar amounts ($), time metrics (hours/days saved), scale (users/requests/records)
-  - Examples: "**45% faster**", "**$2M revenue**", "**10,000+ users**", "**99.9% uptime**"
-  - If exact numbers unknown, use reasonable professional estimates based on context
-  - EVERY bullet must have measurable impact
+   QUANTIFICATION MANDATORY:
+   - Always include: percentages, dollars, time saved, user scale
+   - Examples: "**45% faster**", "**$2M revenue**", "**10K users**"
+   - Estimate reasonably if exact numbers unknown
 
-  SENTENCE RULES:
-  - Maximum 1.5 lines per bullet
-  - Ultra-concise, executive tone
-  - No passive voice, no fluff words
-  - Start strong, end with impact
+   CONCISENESS RULES:
+   - No passive voice, no fluff
+   - Executive tone, business impact focus
+   - Merge overlapping achievements
 
-  DEDUPLICATION:
-  - Merge overlapping achievements
-  - Remove generic responsibilities
-  - Consolidate similar technologies/tools
+   Input: "${content}"
 
-  Input Content:
-  "${content}"
-
-  OUTPUT FORMAT (JSON ONLY):
-  {
-    "refinedText": "...",
-    "impactScore": number (0-100 based on quantification + clarity + business value),
-    "changes": ["Specific change 1", "Specific change 2", ...]
-  }
-  `,
+   OUTPUT (JSON):
+   {
+     "refinedText": "...",
+     "impactScore": number (0-100),
+     "changes": ["change1", "change2"]
+   }
+   `,
 
 
   generateFromMemory: (memory: UserProfileMemory, sectionType: string, contextString: string) => `
-  ROLE: You are a Senior Resume Architect specializing in high-performance profiles.
+   ROLE: Concise Resume Architect - Create 1-minute readable content.
 
-  MEMORY DATA SOURCE:
-  ${JSON.stringify(memory)}
+   MEMORY: ${JSON.stringify(memory)}
 
-  TASK: Generate a premium-quality "${sectionType}" section using ONLY the memory provided.
+   TASK: Generate "${sectionType}" section from memory.
 
-  CONTEXT:
-  ${contextString}
+   RULES:
+   - 1-minute readability - ultra-concise
+   - Bullets only, start with "* "
+   - Power verbs + quantified impact
+   - **Bold metrics** in every bullet
+   - Business impact focus
+   - ${sectionType === 'summary' ? 'EXACTLY 2 lines only' : 'Measurable achievements only'}
 
-  RULES:
-  - Output bullet points only
-  - Each bullet starts with "* "
-  - Use Power Verbs
-  - Include quantified metrics in **bold**
-  - Focus on measurable achievements, not responsibilities
-  - Maximum impact, minimal words
-  - ATS-friendly skill keywords embedded naturally
-
-  STRUCTURE PER BULLET:
-  Action + Result + Metric + Tool/Method
-
-  OUTPUT:
-  Only the final bullet points. No explanations. No headers. No commentary.
-  `,
+   OUTPUT: Bullet points only. No extras.
+   `,
 
 
   optimizeSkills: (skills: string[]) => `
-  ROLE: You are an ATS Optimization Engine and Talent Intelligence System.
+   ROLE: Skill Optimization Engine - Deduplicate and group for 1-minute readability.
 
-  INPUT SKILLS:
-  ${JSON.stringify(skills)}
+   INPUT: ${JSON.stringify(skills)}
 
-  OBJECTIVE: Deliver a recruiter-ready, ATS-dominant skill stack.
+   OBJECTIVE: Create concise, deduplicated skill stack.
 
-  REQUIREMENTS:
-  - Remove duplicates & weak variations
-  - Normalize naming to industry standards
-  - Add missing but highly relevant modern skills
-  - Prioritize by market demand & job relevance
-  - Group logically (Technical, Tools, Frameworks, Soft Skills)
+   RULES:
+   - Remove ALL duplicates and variations
+   - Group by category (Technical, Tools, Frameworks, Soft Skills)
+   - Maximum 12-15 total skills
+   - Industry-standard naming only
+   - Prioritize high-impact, ATS-friendly skills
+   - No redundant or weak skills
 
-  OUTPUT FORMAT (JSON ONLY):
-  {
-    "skills": ["Optimized Skill 1", "Optimized Skill 2", ...]
-  }
-  `,
+   OUTPUT (JSON):
+   {
+     "skills": ["Category: Skill1, Skill2, Skill3", "Category: Skill4, Skill5"]
+   }
+   `,
 
 
   analyzeATS: (resume: Resume) => `
@@ -822,7 +804,27 @@ export const generateResumeFromMemory = async (memory: UserProfileMemory, jobDes
 
     const response = await ai.models.generateContent({
       model: MODEL_FAST,
-      contents: `Generate Resume JSON. Memory: ${JSON.stringify(memory)}. Research: ${research.text}`,
+      contents: `Generate a complete, professional resume in JSON format from the provided memory data.
+
+MEMORY DATA: ${JSON.stringify(memory)}
+
+RESEARCH CONTEXT: ${research.text}
+
+REQUIREMENTS:
+- Generate COMPLETE education section with degree, school, and year for each entry
+- Include all available education information from memory
+- Do not truncate or abbreviate education details
+- Ensure education array is fully populated
+
+OUTPUT FORMAT (JSON):
+{
+  "personalInfo": {...},
+  "experience": [...],
+  "education": [{"degree": "string", "school": "string", "year": "string"}],
+  "projects": [...],
+  "leadershipActivities": [...],
+  "skills": [...]
+}`,
       config: { responseMimeType: "application/json" }
     });
     return { ...sanitizeResume(JSON.parse(response.text || '{}')), researchContext: { summary: research.text, sources: research.chunks } };

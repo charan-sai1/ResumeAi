@@ -12,6 +12,7 @@ import { BrainCircuit } from 'lucide-react';
 import { Sparkles } from 'lucide-react';
 import { BookOpen } from 'lucide-react';
 import { EyeOff } from 'lucide-react';
+import { Undo2 } from 'lucide-react';
 import { enhanceContent, optimizeSkills, generateContentFromMemory } from '../services/geminiService';
 import ATSOptimization from './ATSOptimization';
 
@@ -26,6 +27,8 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
   const [loadingField, setLoadingField] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string>('personal');
   const [newSkill, setNewSkill] = useState('');
+  const [resumeHistory, setResumeHistory] = useState<Resume[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
 
   // Memoize existing skills for performance
   const existingSkillsSet = useMemo(() => {
@@ -50,6 +53,28 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
     });
   };
 
+  // Undo functionality
+  const saveToHistory = (currentResume: Resume) => {
+    setResumeHistory(prev => [...prev.slice(-9), currentResume]); // Keep last 10 snapshots
+    setCanUndo(true);
+  };
+
+  const handleUndo = () => {
+    if (resumeHistory.length > 0) {
+      const previousResume = resumeHistory[resumeHistory.length - 1];
+      setResumeHistory(prev => prev.slice(0, -1));
+      setResume(previousResume);
+      setCanUndo(resumeHistory.length > 1);
+      onNotification?.({ type: 'success', message: 'Changes undone successfully' });
+    }
+  };
+
+  // Enhanced setResume with history tracking
+  const setResumeWithHistory = (newResume: Resume) => {
+    saveToHistory(resume);
+    setResume(newResume);
+  };
+
   const handleEnhance = async (text: string, fieldId: string, context: string, updater: (text: string, score: number) => void) => {
     if (!text) return;
     setLoadingField(fieldId);
@@ -69,20 +94,20 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
     if (resume.skills.length === 0) return;
     setLoadingField('skills');
     const optimized = await optimizeSkills(resume.skills);
-    setResume({ ...resume, skills: optimized });
+    setResumeWithHistory({ ...resume, skills: optimized });
     setLoadingField(null);
   };
   
   const handleAddSkillsFromMemory = () => {
     const newSkillsFromMemory = memory.skills.filter(s => !existingSkillsSet.has(s.toLowerCase()));
-    
+
     if (newSkillsFromMemory.length > 0) {
-      setResume({ ...resume, skills: [...resume.skills, ...newSkillsFromMemory] });
+      setResumeWithHistory({ ...resume, skills: [...resume.skills, ...newSkillsFromMemory] });
     }
   };
 
   const updatePersonalInfo = (field: keyof typeof resume.personalInfo, value: string) => {
-    setResume({ ...resume, personalInfo: { ...resume.personalInfo, [field]: value } });
+    setResumeWithHistory({ ...resume, personalInfo: { ...resume.personalInfo, [field]: value } });
   };
 
   // --- Experience Handlers ---
@@ -95,18 +120,18 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
       endDate: '',
       description: ''
     };
-    setResume({ ...resume, experience: [...resume.experience, newExp] });
+    setResumeWithHistory({ ...resume, experience: [...resume.experience, newExp] });
   };
 
   const updateExperience = (id: string, field: keyof ExperienceItem, value: string) => {
-    setResume({
+    setResumeWithHistory({
       ...resume,
       experience: resume.experience.map(e => e.id === id ? { ...e, [field]: value } : e)
     });
   };
 
   const removeExperience = (id: string) => {
-    setResume({ ...resume, experience: resume.experience.filter(e => e.id !== id) });
+    setResumeWithHistory({ ...resume, experience: resume.experience.filter(e => e.id !== id) });
   };
 
   // --- Education Handlers ---
@@ -117,18 +142,18 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
       school: 'University/School',
       year: 'Year'
     };
-    setResume({ ...resume, education: [...resume.education, newEdu] });
+    setResumeWithHistory({ ...resume, education: [...resume.education, newEdu] });
   };
 
   const updateEducation = (id: string, field: keyof EducationItem, value: string) => {
-    setResume({
+    setResumeWithHistory({
       ...resume,
       education: resume.education.map(e => e.id === id ? { ...e, [field]: value } : e)
     });
   };
 
   const removeEducation = (id: string) => {
-    setResume({ ...resume, education: resume.education.filter(e => e.id !== id) });
+    setResumeWithHistory({ ...resume, education: resume.education.filter(e => e.id !== id) });
   };
 
   // --- Project Handlers ---
@@ -140,18 +165,18 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
       link: '',
       repoLink: ''
     };
-    setResume({ ...resume, projects: [...resume.projects, newProj] });
+    setResumeWithHistory({ ...resume, projects: [...resume.projects, newProj] });
   };
 
   const updateProject = (id: string, field: keyof ProjectItem, value: string) => {
-    setResume({
+    setResumeWithHistory({
       ...resume,
       projects: resume.projects.map(p => p.id === id ? { ...p, [field]: value } : p)
     });
   };
 
   const removeProject = (id: string) => {
-    setResume({ ...resume, projects: resume.projects.filter(p => p.id !== id) });
+    setResumeWithHistory({ ...resume, projects: resume.projects.filter(p => p.id !== id) });
   };
 
   // --- Leadership Activities Handlers ---
@@ -162,24 +187,24 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
       description: '',
       dateRange: '',
     };
-    setResume({ ...resume, leadershipActivities: [...resume.leadershipActivities, newActivity] });
+    setResumeWithHistory({ ...resume, leadershipActivities: [...resume.leadershipActivities, newActivity] });
   };
 
   const updateLeadershipActivity = (id: string, field: keyof LeadershipActivity, value: string) => {
-    setResume({
+    setResumeWithHistory({
       ...resume,
       leadershipActivities: resume.leadershipActivities.map(activity => activity.id === id ? { ...activity, [field]: value } : activity)
     });
   };
 
   const removeLeadershipActivity = (id: string) => {
-    setResume({ ...resume, leadershipActivities: resume.leadershipActivities.filter(activity => activity.id !== id) });
+    setResumeWithHistory({ ...resume, leadershipActivities: resume.leadershipActivities.filter(activity => activity.id !== id) });
   };
 
   // --- Skills Handler ---
   const addSkill = () => {
     if (newSkill.trim()) {
-      setResume({ ...resume, skills: [...resume.skills, newSkill.trim()] });
+      setResumeWithHistory({ ...resume, skills: [...resume.skills, newSkill.trim()] });
       setNewSkill('');
     }
   };
@@ -187,7 +212,7 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
   const removeSkill = (index: number) => {
     const newSkills = [...resume.skills];
     newSkills.splice(index, 1);
-    setResume({ ...resume, skills: newSkills });
+    setResumeWithHistory({ ...resume, skills: newSkills });
   };
 
   const handleSkillKeyDown = (e: React.KeyboardEvent) => {
@@ -220,7 +245,21 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-slate-950 pb-8">
-      
+
+      {/* Undo Button */}
+      {canUndo && (
+        <div className="p-4 bg-slate-900 border-b border-slate-800">
+          <button
+            onClick={handleUndo}
+            className="flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors bg-blue-900/10 hover:bg-blue-900/20 px-4 py-2 rounded border border-blue-500/20"
+            title="Undo last change"
+          >
+            <Undo2 className="w-4 h-4" />
+            Undo Last Change
+          </button>
+        </div>
+      )}
+
       {/* Personal Info */}
       <div className="border-b border-slate-800">
         <SectionHeader 
@@ -238,7 +277,7 @@ const ResumeEditor: React.FC<Props> = React.memo(({ resume, setResume, memory, o
             <Input 
               label="Title (e.g. Senior Product Designer)" 
               value={safeStr(resume.title)} 
-              onChange={(e) => setResume({...resume, title: e.target.value})} 
+              onChange={(e) => setResumeWithHistory({...resume, title: e.target.value})} 
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input label="Email" value={safeStr(resume.personalInfo.email)} onChange={(e) => updatePersonalInfo('email', e.target.value)} />
